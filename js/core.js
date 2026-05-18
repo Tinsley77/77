@@ -1673,19 +1673,21 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
             const _wb = window.wordBank || [];
             let activePool;
 
-            if (_wb.length >= 10) {
-                // 造词库 ≥ 10条：直接从造词库随机抽
+            if (_wb.length >= 200) {
+                // 造词库 ≥ 200条：只走造词库
                 activePool = _wb.filter(s => s && String(s).trim());
             } else {
-                // 造词库 ≤ 9条：从字卡库随机抽1-4条内容直接拼接，存入造词库再发
+                // 造词库 < 200条：从字卡库+造词库合集随机抽1-4条拼接，存入造词库再发
+                const mergedPool = [...replyPoolOnce, ..._wb].filter(s => s && String(s).trim());
                 const cnt = Math.floor(Math.random() * 4) + 1;
                 const parts = [];
                 for (let k = 0; k < cnt; k++) {
-                    parts.push(String(replyPoolOnce[Math.floor(Math.random() * replyPoolOnce.length)]).trim());
+                    parts.push(String(mergedPool[Math.floor(Math.random() * mergedPool.length)]).trim());
                 }
                 const generated = parts.join('');
                 window.wordBank = window.wordBank || [];
-                window.wordBank.push(generated);
+                if (typeof _pushToWordBank === 'function') _pushToWordBank(generated);
+                else { window.wordBank = window.wordBank || []; window.wordBank.push(generated); }
                 if (typeof saveWordBank === 'function') saveWordBank();
                 activePool = [generated];
             }

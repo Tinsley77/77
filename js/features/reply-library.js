@@ -9,6 +9,16 @@ if (typeof window._wbCleanStreak === 'undefined') window._wbCleanStreak = 0;
 if (typeof window._wbCleanThreshold === 'undefined') window._wbCleanThreshold = 200;
 if (typeof window._wbAutoTimer === 'undefined') window._wbAutoTimer = null;
 
+// 造词库去重推入（与主字卡一致：重复内容合并不重复添加）
+function _pushToWordBank(text) {
+    const val = String(text).trim();
+    if (!val) return false;
+    window.wordBank = window.wordBank || [];
+    if (window.wordBank.includes(val)) return false; // 已存在，跳过
+    window.wordBank.push(val);
+    return true;
+}
+
 // 造词库持久化
 async function saveWordBank() {
     try {
@@ -77,7 +87,7 @@ function _scheduleWordBankAuto() {
             }
             const generated = parts.join('');
             window.wordBank = window.wordBank || [];
-            window.wordBank.push(generated);
+            _pushToWordBank(generated);
             await saveWordBank();
         }
         _scheduleWordBankAuto(); // 安排下一次
@@ -569,6 +579,9 @@ function _renderModernToolbar() {
                 <button id="batch-delete-btn" class="batch-act-pill batch-act-danger ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="删除">
                     ${ICONS.trash} 删除
                 </button>
+                <button id="batch-to-wordbank-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="添加至造词库" style="background:rgba(var(--accent-color-rgb,180,140,100),0.1);border-color:var(--accent-color);color:var(--accent-color);">
+                    + 造词库
+                </button>
             </div>
         `;
     }
@@ -761,9 +774,19 @@ function _renderModernToolbar() {
                 showNotification(`已删除 ${indices.length} 条`, 'success');
             }
         });
+        toolbar.querySelector('#batch-to-wordbank-btn')?.addEventListener('click', async () => {
+            if (_batchSelectedIndices.size === 0) return;
+            const indices = [..._batchSelectedIndices].sort((a, b) => a - b);
+            const texts = indices.map(i => customReplies[i]).filter(Boolean);
+            let added = 0, skipped = 0;
+            texts.forEach(t => { if (_pushToWordBank(t)) added++; else skipped++; });
+            await saveWordBank();
+            _batchSelectedIndices.clear();
+            renderReplyLibrary();
+            showNotification(`√ 添加 ${added} 条，跳过 ${skipped} 条重复`, 'success');
+        });
     }
 }
-
 function _renderCardViewWithGroups(list, items) {
     const ctx = _getGroupCtx();
     const groups = ctx.groups;
@@ -977,10 +1000,23 @@ function _createCard(item, index, disabledSet) {
                 ${groupBadge}
             </div>
         `;
-        div.addEventListener('click', () => {
+        div.addEventListener('click', (e) => {
+            e.stopPropagation();
             if (_batchSelectedIndices.has(index)) _batchSelectedIndices.delete(index);
             else _batchSelectedIndices.add(index);
-            renderReplyLibrary();
+            // 更新整个字卡的选中视觉状态
+            const nowSelected = _batchSelectedIndices.has(index);
+            div.className = 'rl-card' + (nowSelected ? ' rl-selected' : '');
+            div.style.background = '';
+            const checkEl = div.querySelector('.rl-batch-check');
+            if (checkEl) {
+                checkEl.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
+                checkEl.style.background = nowSelected ? 'var(--accent-color)' : 'transparent';
+                checkEl.innerHTML = nowSelected
+                    ? `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>`
+                    : '';
+            }
+            _renderModernToolbar();
         });
         return div;
     }
@@ -2242,11 +2278,12 @@ function _showWordBankBatchAddDialog() {
         const lines = panel.querySelector('#wb-batch-input').value
             .split('\n').map(s => s.trim()).filter(Boolean);
         if (!lines.length) { overlay.remove(); return; }
-        lines.forEach(line => { window.wordBank = window.wordBank || []; window.wordBank.push(line); });
+        let added = 0, skipped = 0;
+        lines.forEach(line => { if (_pushToWordBank(line)) added++; else skipped++; });
         await saveWordBank();
         overlay.remove();
         renderReplyLibrary();
-        showNotification(`✓ 已添加 ${lines.length} 条到造词库`, 'success');
+        showNotification(`√ 添加 ${added} 条，跳过 ${skipped} 条重复`, 'success');
     };
 }
 
