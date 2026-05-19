@@ -1092,6 +1092,16 @@ function _buildDailyGreeting() {
         }
         setEl('dg-weather', weather);
 
+        // 取当天最新有内容的 timeslot，没有则显示默认文字
+        var noteText = '(Ta目前没有写下任何随记)';
+        var todayMoodData = (window.moodData && window.moodData[formatDateStr ? formatDateStr(now) : '']) || {};
+        var timeslots = todayMoodData.timeslots || {};
+        var slotKeys = ['18:00', '12:00', '07:00']; // 从最新往前找
+        for (var si = 0; si < slotKeys.length; si++) {
+            var rec = timeslots[slotKeys[si]];
+            if (rec && rec.text) { noteText = rec.text; break; }
+        }
+
         var noteTextEl = document.getElementById('dg-note-text');
         if (noteTextEl) noteTextEl.textContent = noteText;
         var wBadge = document.getElementById('dg-note-weather-badge');

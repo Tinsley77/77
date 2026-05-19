@@ -2056,11 +2056,13 @@ function _showImportUI(data) {
                         if (_annCfg.statusPool) localStorage.setItem('dg_status_pool', JSON.stringify(_annCfg.statusPool));
                     }
                     else if (m.key === 'announcementText') {
+                        if (!_annText) return;
                         let cur = {}; try { cur = JSON.parse(localStorage.getItem('dg_custom_data') || '{}'); } catch(e) {}
                         cur.titles = _annText.titles || []; cur.notes = _annText.notes || [];
                         localStorage.setItem('dg_custom_data', JSON.stringify(cur));
                     }
                     else if (m.key === 'announcementStatusPool') {
+                        if (!_annPool) return;
                         localStorage.setItem('dg_status_pool', JSON.stringify(_annPool));
                     }
                 });
@@ -2123,6 +2125,7 @@ function _showImportUI(data) {
                             localStorage.setItem('dg_status_pool', JSON.stringify(pool));
                         }
                     } else if (m.key === 'announcementText') {
+                        if (!_annText) return;
                         let cur = {}; try { cur = JSON.parse(localStorage.getItem('dg_custom_data') || '{}'); } catch(e) {}
                         cur.titles = [...new Set([...(cur.titles||[]), ...(_annText.titles||[])])];
                         cur.notes  = [...new Set([...(cur.notes||[]),  ...(_annText.notes||[])])];

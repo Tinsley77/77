@@ -1094,7 +1094,7 @@ function showDayDetails(dateStr, data) {
             document.getElementById('detail-partner-kaomoji').textContent = partnerMoodObj.kaomoji;
             document.getElementById('detail-partner-label').textContent = partnerMoodObj.label;
             document.getElementById('detail-partner-label').style.color = partnerMoodObj.color;
-            document.getElementById('detail-partner-text').textContent = data.partnerNote || "（Ta 这天没有写下任何随记）";
+            // partnerNote 已废弃，留言内容由 timeslots 区块显示
             const partnerWeatherEl = document.getElementById('detail-partner-weather');
             if (partnerWeatherEl) {
                 if (data.partnerWeather) { partnerWeatherEl.style.display = 'block'; document.getElementById('detail-partner-weather-val').textContent = data.partnerWeather; }
