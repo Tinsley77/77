@@ -1779,7 +1779,16 @@ function _showExportUI() {
 }
 
 function _doExport(selectedModules) {
-    const libraryData = { exportDate: new Date().toISOString(), modules: [] };
+    // 先写入所有可能的字段（未勾选的写null，导入时显示为灰色不可选）
+    const libraryData = {
+        exportDate: new Date().toISOString(),
+        modules: [],
+        customReplies: null, customPokes: null, customStatuses: null,
+        customMottos: null, customIntros: null, customEmojis: null,
+        wordBank: null, customReplyGroups: null, customPokeGroups: null,
+        customStatusGroups: null, announcementConfig: null,
+        announcementText: null, announcementStatusPool: null,
+    };
     selectedModules.forEach(m => {
         if (m.key === 'customReplies')         { libraryData.customReplies      = customReplies;                  libraryData.modules.push('replies'); }
         else if (m.key === 'customPokes')      { libraryData.customPokes        = customPokes;                    libraryData.modules.push('pokes'); }
@@ -2004,7 +2013,7 @@ function _showImportUI(data) {
     const _annTextCount = _annText ? ((_annText.titles||[]).length + (_annText.notes||[]).length) : undefined;
     const _annPoolCount = Array.isArray(_annPool) ? _annPool.length : undefined;
 
-    const modules = [
+    const allModules = [
         { id: '_ri_replies',  icon: ICONS.comment,   label: '主字卡',        data: data.customReplies,       key: 'customReplies' },
         { id: '_ri_pokes',    icon: ICONS.hand,      label: '拍一拍',        data: data.customPokes,         key: 'customPokes' },
         { id: '_ri_statuses', icon: ICONS.dot,       label: '对方状态',      data: data.customStatuses,      key: 'customStatuses' },
@@ -2018,7 +2027,12 @@ function _showImportUI(data) {
         { id: '_ri_groups',   icon: ICONS.folderBig, label: '字卡分组',      data: data.customReplyGroups,   key: 'customReplyGroups',  extra: true },
         { id: '_ri_pokg',     icon: ICONS.folderBig, label: '拍一拍分组',    data: data.customPokeGroups,    key: 'customPokeGroups',   extra: true },
         { id: '_ri_statg',    icon: ICONS.folderBig, label: '对方状态分组',  data: data.customStatusGroups,  key: 'customStatusGroups', extra: true },
-    ].filter(m => m.data !== undefined && m.data !== null && (Array.isArray(m.data) ? m.data.length > 0 && m.data[0] !== undefined : true));
+    ];
+    // 文件中有数据的模块正常显示，文件中没有的标记为不可选
+    const modules = allModules.map(m => ({
+        ...m,
+        _missing: m.data === undefined || m.data === null
+    })).filter(m => m.data !== undefined);
 
     _showIOSheet(`导入字卡`, `文件中包含 ${modules.length} 个模块`, modules, ICONS.import, (selected, mode) => {
         if (!selected.length) { showNotification('请至少选择一项', 'error'); return; }
@@ -2186,14 +2200,14 @@ function _showIOSheet(title, subtitle, modules, icon, onConfirm, showMode = fals
             </div>
             <div style="overflow-y:auto;padding:8px 22px;display:flex;flex-direction:column;gap:7px;flex:1;">
                 ${modules.map(m => `
-                    <div class="io-module-row">
+                    <div class="io-module-row" style="${m._missing ? 'opacity:0.45;cursor:not-allowed;' : ''}">
                         <div class="io-icon-box">${m.icon}</div>
                         <div style="flex:1;">
                             <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${m.label}</div>
-                            <div style="font-size:11px;color:var(--text-secondary);">${m.displayCount !== undefined ? m.displayCount : (m.data ? m.data.length : m.count)} 条${m.extra ? ' · 含分组结构' : ''}</div>
+                            <div style="font-size:11px;color:var(--text-secondary);">${m._missing ? '此文件中无此数据' : (m.displayCount !== undefined ? m.displayCount : (m.data ? m.data.length : m.count)) + ' 条' + (m.extra ? ' · 含分组结构' : '')}</div>
                         </div>
-                        <div class="io-toggle" data-id="${m.id}"><div class="knob"></div></div>
-                        <input type="checkbox" id="${m.id}" checked style="display:none;">
+                        <div class="io-toggle ${m._missing ? 'off' : ''}" data-id="${m.id}" ${m._missing ? 'style="pointer-events:none;"' : ''}><div class="knob"></div></div>
+                        <input type="checkbox" id="${m.id}" ${m._missing ? '' : 'checked'} ${m._missing ? 'disabled' : ''} style="display:none;">
                     </div>
                 `).join('')}
             </div>

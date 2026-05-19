@@ -1669,31 +1669,7 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 return;
             }
 
-            // ── 只走造词库路径 ──
-            const _wb = window.wordBank || [];
-            let activePool;
-
-            if (_wb.length >= 200) {
-                // 造词库 ≥ 200条：只走造词库
-                activePool = _wb.filter(s => s && String(s).trim());
-            } else {
-                // 造词库 < 200条：从字卡库+造词库合集随机抽1-4条拼接，存入造词库再发
-                const mergedPool = [...replyPoolOnce, ..._wb].filter(s => s && String(s).trim());
-                const cnt = Math.floor(Math.random() * 4) + 1;
-                const parts = [];
-                for (let k = 0; k < cnt; k++) {
-                    parts.push(String(mergedPool[Math.floor(Math.random() * mergedPool.length)]).trim());
-                }
-                const generated = parts.join('');
-                window.wordBank = window.wordBank || [];
-                if (typeof _pushToWordBank === 'function') _pushToWordBank(generated);
-                else { window.wordBank = window.wordBank || []; window.wordBank.push(generated); }
-                if (typeof saveWordBank === 'function') saveWordBank();
-                activePool = [generated];
-            }
-            if (!activePool || !activePool.length) activePool = replyPoolOnce;
-
-            // ── 回复条数：原版概率 ──
+            // ── 先决定发几条 ──
             const replyCount = Math.random() < 0.75 ? 1 : (Math.random() < 0.95 ? 2 : 3);
 
             // 确认有可用回复后再展示"正在输入中"，避免空转
@@ -1703,6 +1679,28 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 ? messages.filter(m => m.sender === 'user' && m.text).slice(-10)
                 : [];
             for (let i = 0; i < replyCount; i++) {
+                // ── 每条独立决定内容来源 ──
+                const _wb = window.wordBank || [];
+                let activePool;
+                if (_wb.length >= 200) {
+                    // 造词库 ≥ 200条：从造词库随机抽
+                    activePool = _wb.filter(s => s && String(s).trim());
+                } else {
+                    // 造词库 < 200条：从字卡库+造词库合集抽1-4条拼接，存入造词库，发这句
+                    const mergedPool = [...replyPoolOnce, ..._wb].filter(s => s && String(s).trim());
+                    const cnt = Math.floor(Math.random() * 4) + 1;
+                    const parts = [];
+                    for (let k = 0; k < cnt; k++) {
+                        parts.push(String(mergedPool[Math.floor(Math.random() * mergedPool.length)]).trim());
+                    }
+                    const generated = parts.join('');
+                    if (typeof _pushToWordBank === 'function') _pushToWordBank(generated);
+                    else { window.wordBank = window.wordBank || []; window.wordBank.push(generated); }
+                    if (typeof saveWordBank === 'function') saveWordBank();
+                    activePool = [generated];
+                }
+                if (!activePool || !activePool.length) activePool = replyPoolOnce;
+
                 const delayRange = Math.max(0, settings.replyDelayMax - settings.replyDelayMin);
                 delay += settings.replyDelayMin + Math.random() * delayRange;
                 setTimeout(() => {

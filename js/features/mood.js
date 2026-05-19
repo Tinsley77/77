@@ -258,6 +258,8 @@ function _generateTimeslotText() {
 window.openTodayMoodHistory = function() {
     const now = new Date();
     const dateStr = formatDateStr(now);
+    // 先确保今日时间段数据是最新的
+    checkTimeslotMessages();
     const data = moodData[dateStr] || {};
     // 关闭问候弹窗，打开今天的详情页
     if (typeof closeDailyGreeting === 'function') closeDailyGreeting();
@@ -1110,7 +1112,10 @@ function showDayDetails(dateStr, data) {
     // ── 时间段留言区块 ──
     const timeslotContainer = document.getElementById('detail-timeslots');
     if (timeslotContainer) {
-        timeslotContainer.innerHTML = '';
+        // 只清空格子，保留"今日留言"标题
+        const cards = timeslotContainer.querySelectorAll('.timeslot-card');
+        cards.forEach(c => c.remove());
+
         const slots = [
             { key: '07:00', label: '早上' },
             { key: '12:00', label: '中午' },
@@ -1120,7 +1125,9 @@ function showDayDetails(dateStr, data) {
         const todayStr = formatDateStr(now);
         const hhmm = now.getHours() * 60 + now.getMinutes();
         const slotMins = { '07:00': 7*60, '12:00': 12*60, '18:00': 18*60 };
-        const timeslots = (data && data.timeslots) || {};
+        // 始终从 moodData 取最新数据
+        const freshData = moodData[dateStr] || {};
+        const timeslots = (freshData && freshData.timeslots) || {};
         let hasAny = false;
 
         // 只显示今天已过时间点；历史日期全部显示
@@ -1134,9 +1141,10 @@ function showDayDetails(dateStr, data) {
             const displayText = hasContent ? record.text : '(Ta目前没有写下任何随记)';
 
             const card = document.createElement('div');
+            card.className = 'timeslot-card';
             card.style.cssText = 'padding:10px 12px;border-radius:10px;background:var(--primary-bg);margin-bottom:8px;position:relative;';
             card.innerHTML = `
-                <div style="font-size:12px;color:var(--text-primary);line-height:1.6;${!hasContent ? 'color:var(--text-secondary);font-style:italic;' : ''}">${displayText}</div>
+                <div style="font-size:12px;line-height:1.6;${!hasContent ? 'color:var(--text-secondary);font-style:italic;' : 'color:var(--text-primary);'}">${displayText}</div>
                 <div style="font-size:11px;color:var(--text-secondary);text-align:right;margin-top:4px;">${displayTime}</div>
             `;
             timeslotContainer.appendChild(card);
