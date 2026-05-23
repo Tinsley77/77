@@ -98,63 +98,81 @@ function _scheduleWordBankAuto() {
 function renderWordBankTab(container) {
     container.innerHTML = '';
 
-    // 顶部统计栏
-    const info = document.createElement('div');
-    info.style.cssText = 'padding:10px 16px 4px;font-size:12px;color:var(--text-secondary);';
-    info.innerHTML = `共 <b style="color:var(--accent-color)">${window.wordBank.length}</b> 条　阈值 <b>${window._wbCleanThreshold}</b> 条　主字卡 ${customReplies.length} 条${customReplies.length < 200 ? '（主字卡需≥200条才自动生成）' : ''}`;
-    container.appendChild(info);
-
-    if (window.wordBank.length === 0) {
-        const empty = document.createElement('div');
-        empty.style.cssText = 'text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:13px;';
-        empty.textContent = '造词库暂无内容，发消息后会自动触发生成';
-        container.appendChild(empty);
-        return;
+    // 批量管理按钮挂到 toolbar（空状态也需要，所以先创建）
+    const toolbar = document.getElementById('batch-ops-toolbar');
+    let wbBatchBtn = document.getElementById('wb-batch-mode-btn');
+    if (!wbBatchBtn && toolbar) {
+        wbBatchBtn = document.createElement('button');
+        wbBatchBtn.id = 'wb-batch-mode-btn';
+        wbBatchBtn.className = 'toolbar-icon-btn';
+        wbBatchBtn.title = '批量管理';
+        wbBatchBtn.innerHTML = (typeof ICONS !== 'undefined' && ICONS.batch) || '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="3" height="3" rx="1"/><rect x="3" y="11" width="3" height="3" rx="1"/><rect x="3" y="17" width="3" height="3" rx="1"/><line x1="9" y1="6.5" x2="21" y2="6.5"/><line x1="9" y1="12.5" x2="21" y2="12.5"/><line x1="9" y1="18.5" x2="21" y2="18.5"/></svg>';
+        const importBtn = toolbar.querySelector('#tb-import-btn');
+        if (importBtn) importBtn.parentNode.insertBefore(wbBatchBtn, importBtn);
+        else toolbar.appendChild(wbBatchBtn);
     }
 
-    // 选择模式状态
+    if (window.wordBank.length === 0) {
+        container.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState('列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
+        if (wbBatchBtn) wbBatchBtn.style.display = 'none';
+        return;
+    }
+    if (wbBatchBtn) wbBatchBtn.style.display = '';
+
     let selectMode = false;
     const selected = new Set();
 
-    // 选择栏（默认隐藏）
+    // 选择栏
     const selBar = document.createElement('div');
     selBar.style.cssText = 'display:none;align-items:center;gap:8px;padding:6px 16px 8px;flex-wrap:wrap;';
     selBar.innerHTML = `
-        <button id="wb-sel-all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">全选 (${window.wordBank.length})</button>
+        <button id="wb-sel-all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb,180,140,100),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">全选 (${window.wordBank.length})</button>
         <button id="wb-sel-del" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除所选</button>
         <button id="wb-sel-exit" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">取消</button>
         <span id="wb-sel-count" style="font-size:12px;color:var(--text-secondary);margin-left:4px;">已选 0 条</span>
     `;
     container.appendChild(selBar);
 
-    // 右上角"选择"按钮入口 —— 追加到统计栏里
-    const selTrigger = document.createElement('button');
-    selTrigger.textContent = '选择';
-    selTrigger.style.cssText = 'float:right;padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;margin-top:-2px;';
-    info.appendChild(selTrigger);
-
     const updateSelCount = () => {
-        selBar.querySelector('#wb-sel-count').textContent = `已选 ${selected.size} 条`;
+        const el = selBar.querySelector('#wb-sel-count');
+        if (el) el.textContent = `已选 ${selected.size} 条`;
+    };
+
+    const applySelectMode = () => {
+        container.querySelectorAll('.wb-checkbox').forEach(cb => cb.style.display = selectMode ? 'flex' : 'none');
+        container.querySelectorAll('.wb-btns').forEach(btns => btns.style.display = selectMode ? 'none' : '');
     };
 
     const toggleSelectMode = (on) => {
         selectMode = on;
         selBar.style.display = on ? 'flex' : 'none';
-        selTrigger.style.display = on ? 'none' : '';
+        if (wbBatchBtn) {
+            wbBatchBtn.classList.toggle('active', on);
+            wbBatchBtn.title = on ? '退出批量' : '批量管理';
+        }
         selected.clear();
-        container.querySelectorAll('.wb-checkbox').forEach(cb => { cb.checked = false; cb.closest('.wb-row').style.background = ''; });
+        container.querySelectorAll('.wb-checkbox').forEach(cb => {
+            cb.style.border = '1.5px solid var(--border-color)';
+            cb.style.background = 'transparent';
+            cb.innerHTML = '';
+            if (cb.closest('.wb-row')) cb.closest('.wb-row').style.background = '';
+        });
         updateSelCount();
+        applySelectMode();
     };
 
-    selTrigger.onclick = () => toggleSelectMode(true);
+    if (wbBatchBtn) wbBatchBtn.onclick = () => toggleSelectMode(!selectMode);
     selBar.querySelector('#wb-sel-exit').onclick = () => toggleSelectMode(false);
 
     selBar.querySelector('#wb-sel-all').onclick = () => {
         const allChecked = selected.size === window.wordBank.length;
         container.querySelectorAll('.wb-checkbox').forEach((cb, i) => {
-            cb.checked = !allChecked;
-            cb.closest('.wb-row').style.background = !allChecked ? 'rgba(var(--accent-color-rgb),0.07)' : '';
-            if (!allChecked) selected.add(i); else selected.delete(i);
+            const nowSelected = !allChecked;
+            cb.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
+            cb.style.background = nowSelected ? 'var(--accent-color)' : 'transparent';
+            cb.innerHTML = nowSelected ? `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>` : '';
+            if (cb.closest('.wb-row')) cb.closest('.wb-row').style.background = nowSelected ? 'rgba(var(--accent-color-rgb,180,140,100),0.07)' : '';
+            if (nowSelected) selected.add(i); else selected.delete(i);
         });
         updateSelCount();
     };
@@ -174,7 +192,7 @@ function renderWordBankTab(container) {
         row.className = 'wb-row';
         row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:0.5px solid var(--border-color);cursor:pointer;transition:background 0.15s;';
         row.innerHTML = `
-            <input type="checkbox" class="wb-checkbox" style="flex-shrink:0;margin-top:3px;display:none;accent-color:var(--accent-color);">
+            <div class="rl-batch-check wb-checkbox" style="width:18px;height:18px;border-radius:5px;flex-shrink:0;margin-top:1px;display:none;align-items:center;justify-content:center;transition:all 0.15s;border:1.5px solid var(--border-color);background:transparent;"></div>
             <div style="flex:1;font-size:13px;color:var(--text-primary);line-height:1.6;word-break:break-all;">${item}</div>
             <div class="wb-btns" style="display:flex;gap:6px;flex-shrink:0;">
                 <button data-idx="${idx}" class="wb-edit-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">编辑</button>
@@ -187,23 +205,17 @@ function renderWordBankTab(container) {
         row.onclick = (e) => {
             if (!selectMode) return;
             if (e.target.tagName === 'BUTTON') return;
-            cb.checked = !cb.checked;
-            row.style.background = cb.checked ? 'rgba(var(--accent-color-rgb),0.07)' : '';
-            if (cb.checked) selected.add(idx); else selected.delete(idx);
+            const nowSelected = !selected.has(idx);
+            if (nowSelected) selected.add(idx); else selected.delete(idx);
+            row.style.background = nowSelected ? 'rgba(var(--accent-color-rgb,180,140,100),0.07)' : '';
+            if (cb) {
+                cb.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
+                cb.style.background = nowSelected ? 'var(--accent-color)' : 'transparent';
+                cb.innerHTML = nowSelected ? `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>` : '';
+            }
             updateSelCount();
         };
     });
-
-    // 进入/退出选择模式时切换 checkbox 和按钮的显示
-    const applySelectMode = () => {
-        container.querySelectorAll('.wb-checkbox').forEach(cb => cb.style.display = selectMode ? '' : 'none');
-        container.querySelectorAll('.wb-btns').forEach(btns => btns.style.display = selectMode ? 'none' : '');
-    };
-
-    // 监听切换（重写 toggleSelectMode 以附带 applySelectMode）
-    const _origToggle = toggleSelectMode;
-    selTrigger.onclick = () => { selectMode = true; selBar.style.display = 'flex'; selTrigger.style.display = 'none'; applySelectMode(); };
-    selBar.querySelector('#wb-sel-exit').onclick = () => { selectMode = false; selBar.style.display = 'none'; selTrigger.style.display = ''; selected.clear(); updateSelCount(); applySelectMode(); container.querySelectorAll('.wb-row').forEach(r => r.style.background = ''); };
 
     container.querySelectorAll('.wb-del-btn').forEach(btn => {
         btn.onclick = async (e) => {
@@ -227,6 +239,7 @@ function renderWordBankTab(container) {
         };
     });
 }
+
 
 
 // 根据当前 tab 返回对应的分组上下文 {groups, items, itemLabel}

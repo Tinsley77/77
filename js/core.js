@@ -1679,14 +1679,14 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 ? messages.filter(m => m.sender === 'user' && m.text).slice(-10)
                 : [];
             for (let i = 0; i < replyCount; i++) {
-                // ── 每条独立决定内容来源 ──
+                // ── 每条独立 50/50：走造词库 or 随机生成新词 ──
                 const _wb = window.wordBank || [];
                 let activePool;
-                if (_wb.length >= 200) {
-                    // 造词库 ≥ 200条：从造词库随机抽
+                if (Math.random() < 0.5 && _wb.length > 0) {
+                    // 50%：直接从造词库随机抽（造词库为空时降级到生成）
                     activePool = _wb.filter(s => s && String(s).trim());
                 } else {
-                    // 造词库 < 200条：从字卡库+造词库合集抽1-4条拼接，存入造词库，发这句
+                    // 50%：从字卡库+造词库合集抽1-4条拼接，存入造词库，发这句
                     const mergedPool = [...replyPoolOnce, ..._wb].filter(s => s && String(s).trim());
                     const cnt = Math.floor(Math.random() * 4) + 1;
                     const parts = [];

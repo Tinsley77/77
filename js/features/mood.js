@@ -239,66 +239,6 @@ async function initMoodData() {
     window.moodData = moodData;
     window.moodTrash = moodTrash;
     checkPartnerDailyMood();
-    checkTimeslotMessages();
-}
-
-// ── 时间段留言：07:00 / 12:00 / 18:00，各自20%概率，补触发 ──
-function _generateTimeslotText() {
-    const pool = [...(window.customReplies || []), ...(window.wordBank || [])].filter(s => s && String(s).trim());
-    if (!pool.length) return '';
-    const cnt = Math.floor(Math.random() * 10) + 1; // 1-10句
-    const punct = ['，', '。', '、', '～'];
-    const parts = [];
-    for (let k = 0; k < cnt; k++) {
-        parts.push(String(pool[Math.floor(Math.random() * pool.length)]).trim());
-    }
-    return parts.join(punct[Math.floor(Math.random() * punct.length)]);
-}
-
-window.openTodayMoodHistory = function() {
-    const now = new Date();
-    const dateStr = formatDateStr(now);
-    // 先确保今日时间段数据是最新的
-    checkTimeslotMessages();
-    const data = moodData[dateStr] || {};
-    // 关闭问候弹窗，打开今天的详情页
-    if (typeof closeDailyGreeting === 'function') closeDailyGreeting();
-    // 打开心情手账弹窗
-    const moodModal = document.getElementById('mood-modal');
-    if (moodModal) moodModal.classList.remove('hidden');
-    setTimeout(() => showDayDetails(dateStr, data), 150);
-};
-
-function checkTimeslotMessages() {
-    const now = new Date();
-    const dateStr = formatDateStr(now);
-    const hhmm = now.getHours() * 60 + now.getMinutes();
-    if (!moodData[dateStr]) moodData[dateStr] = {};
-    if (!moodData[dateStr].timeslots) moodData[dateStr].timeslots = {};
-
-    const slots = [
-        { key: '07:00', mins: 7 * 60 },
-        { key: '12:00', mins: 12 * 60 },
-        { key: '18:00', mins: 18 * 60 },
-    ];
-
-    let changed = false;
-    slots.forEach(slot => {
-        if (hhmm < slot.mins) return; // 时间未到，跳过
-        if (moodData[dateStr].timeslots[slot.key] !== undefined) return; // 已有记录，跳过
-
-        // 补触发：20%生成内容，80%写入null标记
-        const actualTime = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-        if (Math.random() < 0.2) {
-            const text = _generateTimeslotText();
-            moodData[dateStr].timeslots[slot.key] = { text, time: actualTime };
-        } else {
-            moodData[dateStr].timeslots[slot.key] = { text: null, time: actualTime }; // 80%不触发
-        }
-        changed = true;
-    });
-
-    if (changed) saveMoodData();
 }
 function checkPartnerDailyMood() {
     const today = new Date();
@@ -320,7 +260,7 @@ function checkPartnerDailyMood() {
             const cReplies = (typeof customReplies !== 'undefined') ? customReplies : (window._customReplies || []);
             const sourcePool = [...cReplies];
             if (sourcePool.length > 0) {
-                const count = Math.floor(Math.random() * 10) + 1;
+                const count = Math.floor(Math.random() * 3) + 1;
                 const chosen = [];
                 const shuffled = [...sourcePool].sort(() => Math.random() - 0.5);
                 for (let i = 0; i < Math.min(count, shuffled.length); i++) {
@@ -1094,7 +1034,7 @@ function showDayDetails(dateStr, data) {
             document.getElementById('detail-partner-kaomoji').textContent = partnerMoodObj.kaomoji;
             document.getElementById('detail-partner-label').textContent = partnerMoodObj.label;
             document.getElementById('detail-partner-label').style.color = partnerMoodObj.color;
-            // partnerNote 已废弃，留言内容由 timeslots 区块显示
+            document.getElementById('detail-partner-text').textContent = data.partnerNote || "（Ta 这天没有写下任何随记）";
             const partnerWeatherEl = document.getElementById('detail-partner-weather');
             if (partnerWeatherEl) {
                 if (data.partnerWeather) { partnerWeatherEl.style.display = 'block'; document.getElementById('detail-partner-weather-val').textContent = data.partnerWeather; }
@@ -1107,50 +1047,6 @@ function showDayDetails(dateStr, data) {
     } else {
         partnerSection.style.display = 'none';
         if (partnerNoRecord) partnerNoRecord.style.display = 'block';
-    }
-
-    // ── 时间段留言区块 ──
-    const timeslotContainer = document.getElementById('detail-timeslots');
-    if (timeslotContainer) {
-        // 只清空格子，保留"今日留言"标题
-        const cards = timeslotContainer.querySelectorAll('.timeslot-card');
-        cards.forEach(c => c.remove());
-
-        const slots = [
-            { key: '07:00', label: '早上' },
-            { key: '12:00', label: '中午' },
-            { key: '18:00', label: '晚上' },
-        ];
-        const now = new Date();
-        const todayStr = formatDateStr(now);
-        const hhmm = now.getHours() * 60 + now.getMinutes();
-        const slotMins = { '07:00': 7*60, '12:00': 12*60, '18:00': 18*60 };
-        // 始终从 moodData 取最新数据
-        const freshData = moodData[dateStr] || {};
-        const timeslots = (freshData && freshData.timeslots) || {};
-        let hasAny = false;
-
-        // 只显示今天已过时间点；历史日期全部显示
-        slots.forEach(slot => {
-            const isPast = dateStr < todayStr || hhmm >= slotMins[slot.key];
-            if (!isPast) return;
-            hasAny = true;
-            const record = timeslots[slot.key];
-            const hasContent = record && record.text;
-            const displayTime = record ? record.time : slot.key;
-            const displayText = hasContent ? record.text : '(Ta目前没有写下任何随记)';
-
-            const card = document.createElement('div');
-            card.className = 'timeslot-card';
-            card.style.cssText = 'padding:10px 12px;border-radius:10px;background:var(--primary-bg);margin-bottom:8px;position:relative;';
-            card.innerHTML = `
-                <div style="font-size:12px;line-height:1.6;${!hasContent ? 'color:var(--text-secondary);font-style:italic;' : 'color:var(--text-primary);'}">${displayText}</div>
-                <div style="font-size:11px;color:var(--text-secondary);text-align:right;margin-top:4px;">${displayTime}</div>
-            `;
-            timeslotContainer.appendChild(card);
-        });
-
-        timeslotContainer.style.display = hasAny ? 'block' : 'none';
     }
 
     editorView.style.display = 'none';
