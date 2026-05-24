@@ -537,14 +537,13 @@ window.importEnvelopeData = function(data, mode) {
         envelopeData.outbox = data.outbox || [];
         envelopeData.inbox  = data.inbox  || [];
     } else {
-        // 追加：按 id 去重
         var existOutIds = new Set((envelopeData.outbox || []).map(l => l.id));
         var existInIds  = new Set((envelopeData.inbox  || []).map(l => l.id));
         (data.outbox || []).forEach(l => { if (!existOutIds.has(l.id)) envelopeData.outbox.push(l); });
         (data.inbox  || []).forEach(l => { if (!existInIds.has(l.id))  envelopeData.inbox.push(l); });
     }
     saveEnvelopeData();
-    if (typeof renderEnvelopeList === 'function') renderEnvelopeList();
+    if (typeof renderEnvelopeLists === 'function') renderEnvelopeLists();
     var total = envelopeData.outbox.length + envelopeData.inbox.length;
     if (typeof showNotification === 'function') showNotification('导入完成，共 ' + total + ' 封信 ✉️', 'success');
 };
