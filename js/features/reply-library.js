@@ -112,12 +112,21 @@ function renderWordBankTab(container) {
         else toolbar.appendChild(wbBatchBtn);
     }
 
-    if (window.wordBank.length === 0) {
+    if (window.wordBank.length === 0 && !_searchQuery) {
         container.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState('列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
         if (wbBatchBtn) wbBatchBtn.style.display = 'none';
         return;
     }
     if (wbBatchBtn) wbBatchBtn.style.display = '';
+
+    // 搜索过滤
+    const q = (typeof _searchQuery !== 'undefined' ? _searchQuery : '').toLowerCase().trim();
+    const displayList = q ? window.wordBank.filter(item => item && item.toLowerCase().includes(q)) : window.wordBank;
+
+    if (displayList.length === 0) {
+        container.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState(q ? `未找到 "${q}"` : '列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
+        return;
+    }
 
     let selectMode = false;
     const selected = new Set();
@@ -186,8 +195,11 @@ function renderWordBankTab(container) {
         renderReplyLibrary();
     };
 
+    selBar.querySelector('#wb-sel-all').innerHTML = `全选 (${displayList.length})`;
+
     // 列表
-    window.wordBank.forEach((item, idx) => {
+    displayList.forEach((item, idx) => {
+        const realIdx = window.wordBank.indexOf(item); // 保持删除/编辑时用真实索引
         const row = document.createElement('div');
         row.className = 'wb-row';
         row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:0.5px solid var(--border-color);cursor:pointer;transition:background 0.15s;';
@@ -195,8 +207,8 @@ function renderWordBankTab(container) {
             <div class="rl-batch-check wb-checkbox" style="width:18px;height:18px;border-radius:5px;flex-shrink:0;margin-top:1px;display:none;align-items:center;justify-content:center;transition:all 0.15s;border:1.5px solid var(--border-color);background:transparent;"></div>
             <div style="flex:1;font-size:13px;color:var(--text-primary);line-height:1.6;word-break:break-all;">${item}</div>
             <div class="wb-btns" style="display:flex;gap:6px;flex-shrink:0;">
-                <button data-idx="${idx}" class="wb-edit-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">编辑</button>
-                <button data-idx="${idx}" class="wb-del-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除</button>
+                <button data-idx="${realIdx}" class="wb-edit-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">编辑</button>
+                <button data-idx="${realIdx}" class="wb-del-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除</button>
             </div>
         `;
         container.appendChild(row);
@@ -205,8 +217,8 @@ function renderWordBankTab(container) {
         row.onclick = (e) => {
             if (!selectMode) return;
             if (e.target.tagName === 'BUTTON') return;
-            const nowSelected = !selected.has(idx);
-            if (nowSelected) selected.add(idx); else selected.delete(idx);
+            const nowSelected = !selected.has(realIdx);
+            if (nowSelected) selected.add(realIdx); else selected.delete(realIdx);
             row.style.background = nowSelected ? 'rgba(var(--accent-color-rgb,180,140,100),0.07)' : '';
             if (cb) {
                 cb.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
@@ -380,6 +392,9 @@ function _renderListContentOnly() {
     if (currentMajorTab === 'reply') {
         if (currentSubTab === 'custom') {
             itemsToRender = customReplies;
+        } else if (currentSubTab === 'wordbank') {
+            renderWordBankTab(list);
+            return;
         } else if (currentSubTab === 'emojis') {
             itemsToRender = CONSTANTS.REPLY_EMOJIS;
             renderType = 'emoji';

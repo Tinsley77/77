@@ -420,3 +420,131 @@ function handleSendEnvelope() {
     showNotification(`信件已寄出，预计 ${Math.floor(randomHours)} 小时后收到回信 ✉️`, 'success');
 }
 
+
+// ── 信封导出/入 ──
+
+window.openEnvelopeDrawer = function() {
+    var total = (envelopeData.outbox || []).length + (envelopeData.inbox || []).length;
+
+    if (!document.getElementById('dm-drawer-envelope')) {
+        var dummy = document.createElement('div');
+        dummy.innerHTML = '<div class="dm-action-drawer" id="dm-drawer-envelope">'
+            + '<div class="dm-drawer-backdrop" id="dm-drawer-envelope-backdrop"></div>'
+            + '<div class="dm-drawer-sheet">'
+            + '<div class="dm-drawer-handle"></div>'
+            + '<div class="dm-drawer-title">'
+            + '<div class="dm-drawer-title-icon" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff"><i class="fas fa-envelope"></i></div>'
+            + '<div><div class="dm-drawer-title-text" id="env-drawer-title-text">信封投递</div><div class="dm-drawer-subtitle">仅包含消息内容</div></div>'
+            + '</div>'
+            + '<div class="dm-drawer-actions">'
+            + '<button class="dm-drawer-action-btn primary" id="export-envelope-btn" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);border-color:#5B9BD5">'
+            + '<div class="dm-drawer-btn-icon"><i class="fas fa-download"></i></div>'
+            + '<div class="dm-drawer-btn-text"><div class="dm-drawer-btn-title">导出信封</div><div class="dm-drawer-btn-desc">将消息记录保存为文件</div></div>'
+            + '</button>'
+            + '<button class="dm-drawer-action-btn" id="import-envelope-btn">'
+            + '<div class="dm-drawer-btn-icon"><i class="fas fa-upload"></i></div>'
+            + '<div class="dm-drawer-btn-text"><div class="dm-drawer-btn-title">导入信封</div><div class="dm-drawer-btn-desc">从文件恢复历史消息</div></div>'
+            + '</button>'
+            + '</div>'
+            + '<button class="dm-drawer-cancel" id="dm-drawer-envelope-cancel">取消</button>'
+            + '</div></div>'
+            + '<div class="dm-action-drawer" id="dm-drawer-envelope-import">'
+            + '<div class="dm-drawer-backdrop" id="dm-drawer-envelope-import-backdrop"></div>'
+            + '<div class="dm-drawer-sheet">'
+            + '<div class="dm-drawer-handle"></div>'
+            + '<div class="dm-drawer-title">'
+            + '<div class="dm-drawer-title-icon" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff"><i class="fas fa-envelope"></i></div>'
+            + '<div><div class="dm-drawer-title-text" id="env-import-drawer-title-text">信封投递</div><div class="dm-drawer-subtitle">仅包含消息内容</div></div>'
+            + '</div>'
+            + '<div style="padding:12px 16px 4px;display:flex;align-items:center;gap:16px;font-size:14px;color:var(--text-primary);">'
+            + '<span style="opacity:0.7;">导入方式</span>'
+            + '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="env-import-mode" value="append" checked style="accent-color:#5B9BD5;"> 追加</label>'
+            + '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="env-import-mode" value="overwrite" style="accent-color:#5B9BD5;"> 覆盖</label>'
+            + '</div>'
+            + '<div style="padding:8px 16px 16px;display:flex;gap:10px;">'
+            + '<button class="dm-drawer-cancel" id="dm-drawer-envelope-import-cancel" style="flex:1;border-radius:12px;margin-top:0;">取消</button>'
+            + '<button id="confirm-envelope-import-btn" style="flex:2;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="fas fa-download"></i> 确认</button>'
+            + '</div>'
+            + '</div></div>';
+
+        while (dummy.firstElementChild) document.body.appendChild(dummy.firstElementChild);
+
+        var envD = document.getElementById('dm-drawer-envelope');
+        var envID = document.getElementById('dm-drawer-envelope-import');
+
+        var closeEnvD = function() { envD.classList.remove('open'); document.body.style.overflow=''; };
+        var closeEnvID = function() { envID.classList.remove('open'); document.body.style.overflow=''; };
+
+        envD.querySelector('#dm-drawer-envelope-backdrop').addEventListener('click', closeEnvD);
+        envD.querySelector('#dm-drawer-envelope-cancel').addEventListener('click', closeEnvD);
+        envD.querySelector('#export-envelope-btn').addEventListener('click', function() {
+            closeEnvD();
+            window.exportEnvelopeData();
+        });
+        envD.querySelector('#import-envelope-btn').addEventListener('click', function() {
+            closeEnvD();
+            var inp = document.createElement('input');
+            inp.type = 'file'; inp.accept = '.json';
+            inp.onchange = function(e) {
+                var f = e.target.files && e.target.files[0];
+                if (!f) return;
+                var reader = new FileReader();
+                reader.onload = function(ev) {
+                    try {
+                        var d = JSON.parse(ev.target.result);
+                        var t = ((d.outbox||[]).length + (d.inbox||[]).length);
+                        document.getElementById('env-import-drawer-title-text').textContent = '信封投递（' + t + '）';
+                        window._pendingEnvelopeImportData = d;
+                        envID.classList.add('open');
+                        document.body.style.overflow = 'hidden';
+                    } catch(err) { alert('文件格式不正确'); }
+                };
+                reader.readAsText(f);
+            };
+            inp.click();
+        });
+
+        envID.querySelector('#dm-drawer-envelope-import-backdrop').addEventListener('click', closeEnvID);
+        envID.querySelector('#dm-drawer-envelope-import-cancel').addEventListener('click', closeEnvID);
+        envID.querySelector('#confirm-envelope-import-btn').addEventListener('click', function() {
+            var mode = (envID.querySelector('input[name="env-import-mode"]:checked') || {}).value || 'append';
+            window.importEnvelopeData(window._pendingEnvelopeImportData, mode);
+            closeEnvID();
+        });
+    }
+
+    var titleEl = document.getElementById('env-drawer-title-text');
+    if (titleEl) titleEl.textContent = '信封投递（' + total + '）';
+    var drawer = document.getElementById('dm-drawer-envelope');
+    if (drawer) { drawer.classList.add('open'); document.body.style.overflow = 'hidden'; }
+};
+
+window.exportEnvelopeData = function() {
+    var data = JSON.stringify(envelopeData, null, 2);
+    var blob = new Blob([data], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'envelope-backup-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    if (typeof showNotification === 'function') showNotification('信封已导出 ✉️', 'success');
+};
+
+window.importEnvelopeData = function(data, mode) {
+    if (!data) return;
+    if (mode === 'overwrite') {
+        envelopeData.outbox = data.outbox || [];
+        envelopeData.inbox  = data.inbox  || [];
+    } else {
+        // 追加：按 id 去重
+        var existOutIds = new Set((envelopeData.outbox || []).map(l => l.id));
+        var existInIds  = new Set((envelopeData.inbox  || []).map(l => l.id));
+        (data.outbox || []).forEach(l => { if (!existOutIds.has(l.id)) envelopeData.outbox.push(l); });
+        (data.inbox  || []).forEach(l => { if (!existInIds.has(l.id))  envelopeData.inbox.push(l); });
+    }
+    saveEnvelopeData();
+    if (typeof renderEnvelopeList === 'function') renderEnvelopeList();
+    var total = envelopeData.outbox.length + envelopeData.inbox.length;
+    if (typeof showNotification === 'function') showNotification('导入完成，共 ' + total + ' 封信 ✉️', 'success');
+};

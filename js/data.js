@@ -134,6 +134,48 @@
         +   '</div>'
         + '</div>';
 
+    var DRAWER_ENVELOPE_HTML =
+        '<div class="dm-action-drawer" id="dm-drawer-envelope">'
+        +   '<div class="dm-drawer-backdrop" id="dm-drawer-envelope-backdrop"></div>'
+        +   '<div class="dm-drawer-sheet">'
+        +     '<div class="dm-drawer-handle"></div>'
+        +     '<div class="dm-drawer-title">'
+        +       '<div class="dm-drawer-title-icon" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff"><i class="fas fa-envelope"></i></div>'
+        +       '<div><div class="dm-drawer-title-text" id="env-drawer-title-text">信封投递</div><div class="dm-drawer-subtitle">仅包含消息内容</div></div>'
+        +     '</div>'
+        +     '<div class="dm-drawer-actions">'
+        +       '<button class="dm-drawer-action-btn primary" id="export-envelope-btn" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);border-color:#5B9BD5">'
+        +         '<div class="dm-drawer-btn-icon"><i class="fas fa-download"></i></div>'
+        +         '<div class="dm-drawer-btn-text"><div class="dm-drawer-btn-title">导出信封</div><div class="dm-drawer-btn-desc">将消息记录保存为文件</div></div>'
+        +       '</button>'
+        +       '<button class="dm-drawer-action-btn" id="import-envelope-btn">'
+        +         '<div class="dm-drawer-btn-icon"><i class="fas fa-upload"></i></div>'
+        +         '<div class="dm-drawer-btn-text"><div class="dm-drawer-btn-title">导入信封</div><div class="dm-drawer-btn-desc">从文件恢复历史消息</div></div>'
+        +       '</button>'
+        +     '</div>'
+        +     '<button class="dm-drawer-cancel" id="dm-drawer-envelope-cancel">取消</button>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="dm-action-drawer" id="dm-drawer-envelope-import">'
+        +   '<div class="dm-drawer-backdrop" id="dm-drawer-envelope-import-backdrop"></div>'
+        +   '<div class="dm-drawer-sheet">'
+        +     '<div class="dm-drawer-handle"></div>'
+        +     '<div class="dm-drawer-title">'
+        +       '<div class="dm-drawer-title-icon" style="background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff"><i class="fas fa-envelope"></i></div>'
+        +       '<div><div class="dm-drawer-title-text" id="env-import-drawer-title-text">信封投递</div><div class="dm-drawer-subtitle">仅包含消息内容</div></div>'
+        +     '</div>'
+        +     '<div style="padding:8px 16px 4px;display:flex;align-items:center;gap:16px;font-size:14px;color:var(--text-primary);">'
+        +       '<span style="opacity:0.7;">导入方式</span>'
+        +       '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="env-import-mode" value="append" checked style="accent-color:#5B9BD5;"> 追加</label>'
+        +       '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="env-import-mode" value="overwrite" style="accent-color:#5B9BD5;"> 覆盖</label>'
+        +     '</div>'
+        +     '<div style="padding:8px 16px 16px;display:flex;gap:10px;">'
+        +       '<button class="dm-drawer-cancel" id="dm-drawer-envelope-import-cancel" style="flex:1;border-radius:12px;margin-top:0;">取消</button>'
+        +       '<button id="confirm-envelope-import-btn" style="flex:2;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#5B9BD5,#2E6FBE);color:#fff;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;"><i class="fas fa-download"></i> 确认</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+
     function isCorrect(mc) {
         return mc.querySelector('.dm-topbar') !== null
             && mc.querySelector('.dm-storage-card') !== null
@@ -142,7 +184,7 @@
     }
 
     function ensureDrawersOnBody() {
-        var DRAWER_IDS = ['dm-drawer-full', 'dm-drawer-chat'];
+        var DRAWER_IDS = ['dm-drawer-full', 'dm-drawer-chat', 'dm-drawer-envelope', 'dm-drawer-envelope-import'];
         DRAWER_IDS.forEach(function(id) {
             var existing = document.getElementById(id);
             if (existing && existing.parentElement === document.body) return;
@@ -152,7 +194,9 @@
             }
             var dummy = document.createElement('div');
             if (id === 'dm-drawer-full') dummy.innerHTML = DRAWER_FULL_HTML;
-            else dummy.innerHTML = DRAWER_CHAT_HTML;
+            else if (id === 'dm-drawer-chat') dummy.innerHTML = DRAWER_CHAT_HTML;
+            else if (id === 'dm-drawer-envelope') { dummy.innerHTML = DRAWER_ENVELOPE_HTML; document.body.appendChild(dummy.firstElementChild); if (dummy.firstElementChild) document.body.appendChild(dummy.firstElementChild); return; }
+            else return;
             document.body.appendChild(dummy.firstElementChild);
         });
     }
@@ -319,6 +363,52 @@
                     if (f && typeof importChatHistory === 'function') importChatHistory(f);
                 };
                 inp.click();
+            });
+        }
+
+        // 信封导出/入 drawer
+        var envDrawer = document.getElementById('dm-drawer-envelope');
+        if (envDrawer) {
+            envDrawer.querySelector('#dm-drawer-envelope-backdrop')?.addEventListener('click', function () { closeDrawer('dm-drawer-envelope'); });
+            envDrawer.querySelector('#dm-drawer-envelope-cancel')?.addEventListener('click', function () { closeDrawer('dm-drawer-envelope'); });
+            envDrawer.querySelector('#export-envelope-btn')?.addEventListener('click', function () {
+                closeDrawer('dm-drawer-envelope');
+                if (typeof exportEnvelopeData === 'function') exportEnvelopeData();
+            });
+            envDrawer.querySelector('#import-envelope-btn')?.addEventListener('click', function () {
+                closeDrawer('dm-drawer-envelope');
+                var inp = document.createElement('input');
+                inp.type = 'file'; inp.accept = '.json';
+                inp.onchange = function (e) {
+                    var f = e.target.files && e.target.files[0];
+                    if (!f) return;
+                    // 更新导入确认弹窗的标题条数
+                    var reader = new FileReader();
+                    reader.onload = function (ev) {
+                        try {
+                            var d = JSON.parse(ev.target.result);
+                            var total = ((d.outbox||[]).length + (d.inbox||[]).length);
+                            var titleEl = document.getElementById('env-import-drawer-title-text');
+                            if (titleEl) titleEl.textContent = '信封投递（' + total + '）';
+                            // 存文件数据到全局等待确认
+                            window._pendingEnvelopeImportData = d;
+                            openDrawer('dm-drawer-envelope-import');
+                        } catch(e) { alert('文件格式不正确'); }
+                    };
+                    reader.readAsText(f);
+                };
+                inp.click();
+            });
+        }
+
+        var envImportDrawer = document.getElementById('dm-drawer-envelope-import');
+        if (envImportDrawer) {
+            envImportDrawer.querySelector('#dm-drawer-envelope-import-backdrop')?.addEventListener('click', function () { closeDrawer('dm-drawer-envelope-import'); });
+            envImportDrawer.querySelector('#dm-drawer-envelope-import-cancel')?.addEventListener('click', function () { closeDrawer('dm-drawer-envelope-import'); });
+            envImportDrawer.querySelector('#confirm-envelope-import-btn')?.addEventListener('click', function () {
+                var mode = (envImportDrawer.querySelector('input[name="env-import-mode"]:checked') || {}).value || 'append';
+                if (typeof importEnvelopeData === 'function') importEnvelopeData(window._pendingEnvelopeImportData, mode);
+                closeDrawer('dm-drawer-envelope-import');
             });
         }
 
