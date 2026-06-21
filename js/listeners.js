@@ -1335,6 +1335,23 @@ autoSendSlider.addEventListener('change', () => {
             showModal(document.getElementById('envelope-modal'));
         });
     }
+    // 创词 入口（模块待整合，先预留入口）
+    const chuanciEntryBtn = document.getElementById('chuanci-function');
+    if (chuanciEntryBtn) {
+        chuanciEntryBtn.addEventListener('click', () => {
+            // 模块对象未来由独立 chuanci 文件提供
+            if (typeof window.Chuanci !== 'undefined' && typeof window.Chuanci.open === 'function') {
+                hideModal(DOMElements.advancedModal.modal);
+                window.Chuanci.open();
+            } else {
+                if (typeof showNotification === 'function') {
+                    showNotification('创词模块还在开发中，敬请期待', 'info');
+                } else {
+                    alert('创词模块还在开发中');
+                }
+            }
+        });
+    }
     const galleryBanner = document.getElementById('gallery-banner-entry');
     if (galleryBanner) {
         galleryBanner.addEventListener('click', () => {

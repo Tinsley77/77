@@ -25,6 +25,10 @@
         let isBatchFavoriteMode = false;
         let selectedMessages = [];
         let customReplies = [];
+        // 标记哪些主字卡是从创词模块生成存入的（存文本字符串集合，便于持久化为数组）
+        let chuanciTexts = new Set();
+        // 主字卡分类筛选 'all' | 'manual' | 'chuanci'
+        let _crCategoryFilter = 'all';
         let customPokes = [];
         let customStatuses = [];
         let customPokeGroups = [];

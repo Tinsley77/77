@@ -547,6 +547,185 @@
     </div>
     </div>
 </div>
+
+<!-- 创词 Chuanci 模块 -->
+<div class="modal" id="chuanci-modal">
+    <div class="modal-content">
+        <div class="chuanci-app-inner">
+            <!-- 主页视图 -->
+            <div class="cc-view active" id="cc-view-home">
+                <div class="cc-header">
+                    <button class="cc-header-btn" onclick="Chuanci.close()" title="关闭"><i class="fas fa-times"></i></button>
+                    <div class="cc-header-title">创词</div>
+                    <div class="cc-header-link" onclick="cc_openView('api')">填入API</div>
+                </div>
+                <div class="cc-tabbar-wrap">
+                    <div class="cc-tabbar" id="cc-tabbar"></div>
+                    <button class="cc-settings-btn" onclick="cc_openSettings()"><i class="fas fa-cog"></i></button>
+                </div>
+                <div class="cc-content" id="cc-content"></div>
+                <div class="cc-history-link" onclick="cc_openView('history')">历史记录</div>
+            </div>
+
+            <!-- 历史 -->
+            <div class="cc-view" id="cc-view-history">
+                <div class="cc-header">
+                    <button class="cc-header-btn" onclick="cc_openView('home')"><i class="fas fa-chevron-left"></i></button>
+                    <div class="cc-header-title">历史记录</div>
+                    <div class="cc-header-link" style="visibility:hidden;">·</div>
+                </div>
+                <div class="cc-cal-header">
+                    <button class="cc-cal-nav-btn" onclick="cc_changeMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                    <div class="cc-cal-month" id="cc-cal-month">—</div>
+                    <button class="cc-cal-nav-btn" onclick="cc_changeMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <div class="cc-cal-grid" id="cc-cal-grid"></div>
+                <div class="cc-day-detail" id="cc-day-detail"></div>
+            </div>
+
+            <!-- 编辑 -->
+            <div class="cc-view" id="cc-view-edit">
+                <div class="cc-header">
+                    <button class="cc-header-btn" onclick="cc_openView('home')"><i class="fas fa-chevron-left"></i></button>
+                    <div class="cc-header-title">编辑</div>
+                    <div class="cc-header-link" onclick="cc_openManageModal()">管理</div>
+                </div>
+                <div id="cc-edit-modules"></div>
+            </div>
+
+            <!-- API -->
+            <div class="cc-view" id="cc-view-api">
+                <div class="cc-header">
+                    <button class="cc-header-btn" onclick="cc_openView('home')"><i class="fas fa-chevron-left"></i></button>
+                    <div class="cc-header-title">模型调用</div>
+                    <div class="cc-header-link" style="visibility:hidden;">·</div>
+                </div>
+                <div class="cc-api-form">
+                    <div class="cc-api-expire-notice" id="cc-api-expire-notice" style="display:none;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:16px;line-height:1.5;border:1px solid transparent;">
+                        <i class="fas fa-shield-alt" style="font-size:14px;flex-shrink:0;"></i>
+                        <span class="cc-api-notice-text">API Key 将在 24 小时后自动清除</span>
+                    </div>
+                    <div class="cc-form-group">
+                        <label class="cc-form-label">base_url</label>
+                        <input type="text" class="cc-form-input" id="cc-api-baseurl" placeholder="请输入你的接口地址">
+                    </div>
+                    <div class="cc-form-group">
+                        <label class="cc-form-label">调用模型</label>
+                        <input type="text" class="cc-form-input" id="cc-api-model" placeholder="请输入你要调用的模型名称">
+                    </div>
+                    <div class="cc-form-group">
+                        <label class="cc-form-label">API key</label>
+                        <input type="password" class="cc-form-input" id="cc-api-key" placeholder="请填写你的key" style="margin-bottom:6px;">
+                        <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;padding:0 2px;">
+                            <i class="fas fa-info-circle" style="font-size:12px;vertical-align:-1px;"></i>
+                            API key 只保留 24 小时，时间到自动清理，再次使用需要再次填入
+                        </div>
+                    </div>
+                    <div class="cc-form-group">
+                        <label class="cc-form-label">说说要求</label>
+                        <textarea class="cc-form-textarea" id="cc-api-persona" placeholder="此处写上你想让 AI 转译的语气、形象或者要求"></textarea>
+                    </div>
+                    <div class="cc-form-actions">
+                        <button class="cc-form-btn danger" onclick="cc_clearApiConfig()">清除</button>
+                        <button class="cc-form-btn primary" onclick="cc_saveApiConfig()">提交</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 底部按钮 -->
+            <div id="cc-footer">
+                <div class="cc-pending-info" id="cc-pending-info" style="display:none"></div>
+                <button class="cc-generate-btn" id="cc-generate-btn" onclick="cc_clickGenerate()">
+                    <i class="fas fa-wand-magic-sparkles"></i> 点击开始生成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="cc-modal-mask" id="cc-settings-modal" onclick="if(event.target===this)cc_closeSettings()">
+        <div class="cc-modal">
+            <div class="cc-modal-header">
+                <button class="cc-modal-close" onclick="cc_closeSettings()"><i class="fas fa-times"></i></button>
+                <div class="cc-modal-title">设置</div>
+                <div style="width:28px"></div>
+            </div>
+            <div class="cc-toggle-row">
+                <div>
+                    <div class="cc-toggle-label">开启时长等待</div>
+                    <div class="cc-toggle-desc">关闭后即时生成</div>
+                </div>
+                <div class="cc-toggle" id="cc-toggle-duration" onclick="cc_toggleDuration()"></div>
+            </div>
+            <div class="cc-slider-row" id="cc-slider-row">
+                <span class="cc-slider-label">时长（分钟）</span>
+                <input type="range" min="1" max="30" value="5" class="cc-slider" id="cc-duration-slider" oninput="cc_updateDuration(this.value)">
+                <span class="cc-slider-val" id="cc-duration-val">5</span>
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:12px;line-height:1.6">
+                等待期间可继续点击生成，新任务加入排队，各自独立计时。
+            </div>
+        </div>
+    </div>
+
+    <!-- 输入弹窗 -->
+    <div class="cc-modal-mask" id="cc-input-modal" onclick="if(event.target===this)cc_closeInputModal()">
+        <div class="cc-modal">
+            <div class="cc-modal-header">
+                <button class="cc-modal-close" onclick="cc_closeInputModal()"><i class="fas fa-times"></i></button>
+                <div class="cc-modal-title" id="cc-input-modal-title">新增</div>
+                <div style="width:28px"></div>
+            </div>
+            <textarea class="cc-form-textarea" id="cc-input-textarea" placeholder="" style="min-height:120px; margin-bottom:10px;"></textarea>
+            <div class="cc-modal-actions">
+                <button class="cc-modal-btn primary" onclick="cc_confirmInput()" style="flex:1;">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理弹窗 -->
+    <div class="cc-modal-mask" id="cc-manage-modal" onclick="if(event.target===this)cc_closeManageModal()">
+        <div class="cc-modal">
+            <div class="cc-modal-header">
+                <button class="cc-modal-close" onclick="cc_closeManageModal()"><i class="fas fa-times"></i></button>
+                <div class="cc-modal-title">新增模块</div>
+                <div style="width:28px"></div>
+            </div>
+            <textarea class="cc-form-textarea" id="cc-manage-input" placeholder="在此粘贴内容，每行一条" style="margin-bottom:10px; min-height:80px;"></textarea>
+            <div class="cc-modal-actions" style="margin-bottom:18px;">
+                <button class="cc-modal-btn primary" onclick="cc_addModuleFromInput()" style="flex:1;">确定</button>
+            </div>
+            <div class="cc-manage-list" id="cc-manage-list"></div>
+        </div>
+    </div>
+
+    <div class="cc-toast" id="cc-toast"></div>
+</div>
+
+<!-- 创词 - 对方申请追加字卡 弹窗（独立于 chuanci-modal，全局可弹出） -->
+<div class="cc-modal-mask" id="cc-partner-request-modal">
+    <div class="cc-pr-card">
+        <div class="cc-pr-people">
+            <div class="cc-pr-person">
+                <div class="cc-pr-avatar cc-pr-partner-avatar"></div>
+                <div class="cc-pr-name cc-pr-partner-name">对方</div>
+                <div class="cc-pr-role">发起人</div>
+            </div>
+            <div class="cc-pr-emoji">❤️</div>
+            <div class="cc-pr-person">
+                <div class="cc-pr-avatar cc-pr-my-avatar"></div>
+                <div class="cc-pr-name cc-pr-my-name">我</div>
+                <div class="cc-pr-role" style="visibility:hidden;">·</div>
+            </div>
+        </div>
+        <div class="cc-pr-text">XXX 申请追加字卡，准许嘛？</div>
+        <div class="cc-pr-actions">
+            <button class="cc-pr-btn cc-pr-btn-reject">拒绝</button>
+            <button class="cc-pr-btn cc-pr-btn-allow">允许</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal" id="group-chat-modal">
     <div class="modal-content">
         <div class="modal-title">
@@ -1398,6 +1577,9 @@
                     <div class="settings-item" id="envelope-function">
                         <i class="fas fa-envelope"></i><span>信封投递</span>
                     </div>
+                    <div class="settings-item" id="chuanci-function">
+                        <i class="fas fa-feather-alt"></i><span>创词</span>
+                    </div>
                 </div>
             </div>
 
@@ -2193,6 +2375,7 @@
     <script src="js/features/theme-editor.js"></script>
     <script src="js/features/group-chat.js"></script>
     <script src="js/features/call.js"></script>
+    <script src="js/features/chuanci.js"></script>
 
     <!-- == 合并模块 == -->
     <script src="js/games.js"></script> 

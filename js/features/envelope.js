@@ -128,7 +128,9 @@ window.openEnvelopeAndViewReply = function(replyId) {
 };
 
 function generateEnvelopeReplyText() {
-    const sourcePool = [...customReplies, ...(window.wordBank || [])].filter(s => s && String(s).trim());
+    const _wbRaw = window.wordBank || [];
+    const _wbTexts = _wbRaw.map(it => typeof it === 'string' ? it : (it && it.text) || '').filter(Boolean);
+    const sourcePool = [...customReplies, ..._wbTexts].filter(s => s && String(s).trim());
     if (!sourcePool.length) return '（暂无内容）';
     const sentenceCount = Math.floor(Math.random() * (20 - 8 + 1)) + 8;
     let replyContent = "";

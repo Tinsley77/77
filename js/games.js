@@ -1350,6 +1350,8 @@ function initComboMenu() {
 
         const wrapper = document.createElement('div');
         wrapper.className = 'poke-list-view';
+        wrapper.style.maxHeight = '50vh';
+        wrapper.style.overflowY = 'auto';
 
         const customBtn = document.createElement('button');
         customBtn.className = 'custom-poke-btn';
@@ -1361,20 +1363,14 @@ function initComboMenu() {
         };
         wrapper.appendChild(customBtn);
 
-        const userPresets = [
-            "拍了拍对方的头",
-            "戳了戳对方的脸颊",
-            "抱住了对方",
-            "给对方比了个心",
-            "牵起了对方的手",
-            "看着对方发呆"
-        ];
+        // 改为读取用户填入的拍一拍内容（customPokes）
+        const userPresets = (typeof customPokes !== 'undefined' && Array.isArray(customPokes)) ? customPokes.slice() : [];
 
         const title = document.createElement('div');
         title.style.fontSize = '12px';
         title.style.color = 'var(--text-secondary)';
         title.style.marginBottom = '5px';
-        title.innerText = '快捷动作';
+        title.innerText = userPresets.length === 0 ? '还没有动作（点击上方"自定义动作"添加）' : '我的动作';
         wrapper.appendChild(title);
 
         userPresets.forEach(text => {

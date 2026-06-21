@@ -478,8 +478,11 @@ function showPokeTab() {
     area.style.display = 'flex';
     area.style.flexDirection = 'column';
     area.style.gap = '8px';
-    
-    const quickPokes = customPokes.slice(0, 6);
+    area.style.maxHeight = '50vh';
+    area.style.overflowY = 'auto';
+
+    // 显示用户填入的所有拍一拍（不再限制前6条）
+    const quickPokes = customPokes.slice();
     
     quickPokes.forEach(pokeText => {
         const cleanPokeText = (typeof window._sanitizePokeTextForDisplay === 'function')

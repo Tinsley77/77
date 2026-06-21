@@ -10,12 +10,24 @@ if (typeof window._wbCleanThreshold === 'undefined') window._wbCleanThreshold = 
 if (typeof window._wbAutoTimer === 'undefined') window._wbAutoTimer = null;
 
 // 造词库去重推入（与主字卡一致：重复内容合并不重复添加）
-function _pushToWordBank(text) {
+// source: 'chat' (对话拼接) | 'auto' (自动生成)
+function _wbGetText(item) {
+    if (item == null) return '';
+    return typeof item === 'string' ? item : (item.text || '');
+}
+function _wbGetSource(item) {
+    if (item == null) return 'chat';
+    return typeof item === 'string' ? 'chat' : (item.source || 'chat');
+}
+function _pushToWordBank(text, source) {
     const val = String(text).trim();
     if (!val) return false;
     window.wordBank = window.wordBank || [];
-    if (window.wordBank.includes(val)) return false; // 已存在，跳过
-    window.wordBank.push(val);
+    // 用文本去重
+    for (let i = 0; i < window.wordBank.length; i++) {
+        if (_wbGetText(window.wordBank[i]) === val) return false;
+    }
+    window.wordBank.push({ text: val, source: source || 'chat' });
     return true;
 }
 
@@ -32,7 +44,13 @@ async function saveWordBank() {
 async function loadWordBank() {
     try {
         const saved = await localforage.getItem(getStorageKey('wordBank'));
-        if (Array.isArray(saved)) window.wordBank = saved;
+        if (Array.isArray(saved)) {
+            // 迁移旧字符串格式 → { text, source: 'chat' }
+            window.wordBank = saved.map(item => {
+                if (typeof item === 'string') return { text: item, source: 'chat' };
+                return item;
+            });
+        }
         const meta = await localforage.getItem(getStorageKey('wbMeta'));
         if (meta) {
             window._wbCleanStreak = meta.cleanStreak || 0;
@@ -87,7 +105,7 @@ function _scheduleWordBankAuto() {
             }
             const generated = parts.join('');
             window.wordBank = window.wordBank || [];
-            _pushToWordBank(generated);
+            _pushToWordBank(generated, 'auto');
             await saveWordBank();
         }
         _scheduleWordBankAuto(); // 安排下一次
@@ -95,10 +113,13 @@ function _scheduleWordBankAuto() {
 }
 
 // 渲染造词库 tab — 与主字卡交互一致（全选删除、confirm删除、prompt编辑）
+// 顶部加分类筛选：全部 / 对话拼接 / 自动生成
+if (typeof window._wbCategoryFilter === 'undefined') window._wbCategoryFilter = 'all';
+
 function renderWordBankTab(container) {
     container.innerHTML = '';
 
-    // 批量管理按钮挂到 toolbar（空状态也需要，所以先创建）
+    // 批量管理按钮挂到 toolbar
     const toolbar = document.getElementById('batch-ops-toolbar');
     let wbBatchBtn = document.getElementById('wb-batch-mode-btn');
     if (!wbBatchBtn && toolbar) {
@@ -112,19 +133,54 @@ function renderWordBankTab(container) {
         else toolbar.appendChild(wbBatchBtn);
     }
 
-    if (window.wordBank.length === 0 && !_searchQuery) {
-        container.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState('列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
+    // 顶部分类筛选 tabs
+    const wb = window.wordBank || [];
+    const allCount = wb.length;
+    const chatCount = wb.filter(it => _wbGetSource(it) === 'chat').length;
+    const autoCount = wb.filter(it => _wbGetSource(it) === 'auto').length;
+
+    const filterBar = document.createElement('div');
+    filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
+    const mkChip = (key, label, count) => {
+        const active = window._wbCategoryFilter === key;
+        return `<button data-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;">${label} <span style="opacity:.75;">${count}</span></button>`;
+    };
+    filterBar.innerHTML =
+        mkChip('all', '全部', allCount) +
+        mkChip('chat', '对话拼接', chatCount) +
+        mkChip('auto', '自动生成', autoCount);
+    container.appendChild(filterBar);
+    filterBar.querySelectorAll('button[data-filter]').forEach(btn => {
+        btn.onclick = () => {
+            window._wbCategoryFilter = btn.dataset.filter;
+            renderReplyLibrary();
+        };
+    });
+
+    if (allCount === 0 && !_searchQuery) {
+        const empty = document.createElement('div');
+        empty.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState('列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
+        container.appendChild(empty.firstElementChild || empty);
         if (wbBatchBtn) wbBatchBtn.style.display = 'none';
         return;
     }
     if (wbBatchBtn) wbBatchBtn.style.display = '';
 
-    // 搜索过滤
+    // 按 source 过滤 + 按搜索词过滤
     const q = (typeof _searchQuery !== 'undefined' ? _searchQuery : '').toLowerCase().trim();
-    const displayList = q ? window.wordBank.filter(item => item && item.toLowerCase().includes(q)) : window.wordBank;
+    const cf = window._wbCategoryFilter || 'all';
+    let displayList = cf === 'all' ? wb.slice() : wb.filter(it => _wbGetSource(it) === cf);
+    if (q) {
+        displayList = displayList.filter(it => {
+            const t = _wbGetText(it);
+            return t && t.toLowerCase().includes(q);
+        });
+    }
 
     if (displayList.length === 0) {
-        container.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState(q ? `未找到 "${q}"` : '列表空空如也') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">列表空空如也</div>';
+        const empty = document.createElement('div');
+        empty.innerHTML = typeof renderEmptyState === 'function' ? renderEmptyState(q ? `未找到 "${q}"` : '此分类暂无内容') : '<div style="text-align:center;padding:40px 20px;color:var(--text-secondary);">此分类暂无内容</div>';
+        container.appendChild(empty.firstElementChild || empty);
         return;
     }
 
@@ -135,7 +191,7 @@ function renderWordBankTab(container) {
     const selBar = document.createElement('div');
     selBar.style.cssText = 'display:none;align-items:center;gap:8px;padding:6px 16px 8px;flex-wrap:wrap;';
     selBar.innerHTML = `
-        <button id="wb-sel-all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb,180,140,100),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">全选 (${window.wordBank.length})</button>
+        <button id="wb-sel-all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb,180,140,100),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">全选 (${displayList.length})</button>
         <button id="wb-sel-del" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除所选</button>
         <button id="wb-sel-exit" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">取消</button>
         <span id="wb-sel-count" style="font-size:12px;color:var(--text-secondary);margin-left:4px;">已选 0 条</span>
@@ -174,14 +230,18 @@ function renderWordBankTab(container) {
     selBar.querySelector('#wb-sel-exit').onclick = () => toggleSelectMode(false);
 
     selBar.querySelector('#wb-sel-all').onclick = () => {
-        const allChecked = selected.size === window.wordBank.length;
-        container.querySelectorAll('.wb-checkbox').forEach((cb, i) => {
+        const allChecked = selected.size === displayList.length;
+        container.querySelectorAll('.wb-row').forEach((row, i) => {
+            const cb = row.querySelector('.wb-checkbox');
+            const realIdx = parseInt(row.dataset.realIdx);
             const nowSelected = !allChecked;
-            cb.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
-            cb.style.background = nowSelected ? 'var(--accent-color)' : 'transparent';
-            cb.innerHTML = nowSelected ? `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>` : '';
-            if (cb.closest('.wb-row')) cb.closest('.wb-row').style.background = nowSelected ? 'rgba(var(--accent-color-rgb,180,140,100),0.07)' : '';
-            if (nowSelected) selected.add(i); else selected.delete(i);
+            if (cb) {
+                cb.style.border = `1.5px solid ${nowSelected ? 'var(--accent-color)' : 'var(--border-color)'}`;
+                cb.style.background = nowSelected ? 'var(--accent-color)' : 'transparent';
+                cb.innerHTML = nowSelected ? `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>` : '';
+            }
+            row.style.background = nowSelected ? 'rgba(var(--accent-color-rgb,180,140,100),0.07)' : '';
+            if (nowSelected) selected.add(realIdx); else selected.delete(realIdx);
         });
         updateSelCount();
     };
@@ -195,17 +255,17 @@ function renderWordBankTab(container) {
         renderReplyLibrary();
     };
 
-    selBar.querySelector('#wb-sel-all').innerHTML = `全选 (${displayList.length})`;
-
     // 列表
-    displayList.forEach((item, idx) => {
-        const realIdx = window.wordBank.indexOf(item); // 保持删除/编辑时用真实索引
+    displayList.forEach((item) => {
+        const text = _wbGetText(item);
+        const realIdx = window.wordBank.indexOf(item);
         const row = document.createElement('div');
         row.className = 'wb-row';
+        row.dataset.realIdx = realIdx;
         row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 16px;border-bottom:0.5px solid var(--border-color);cursor:pointer;transition:background 0.15s;';
         row.innerHTML = `
             <div class="rl-batch-check wb-checkbox" style="width:18px;height:18px;border-radius:5px;flex-shrink:0;margin-top:1px;display:none;align-items:center;justify-content:center;transition:all 0.15s;border:1.5px solid var(--border-color);background:transparent;"></div>
-            <div style="flex:1;font-size:13px;color:var(--text-primary);line-height:1.6;word-break:break-all;">${item}</div>
+            <div style="flex:1;font-size:13px;color:var(--text-primary);line-height:1.6;word-break:break-all;">${text}</div>
             <div class="wb-btns" style="display:flex;gap:6px;flex-shrink:0;">
                 <button data-idx="${realIdx}" class="wb-edit-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">编辑</button>
                 <button data-idx="${realIdx}" class="wb-del-btn" style="padding:3px 10px;border-radius:8px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除</button>
@@ -243,9 +303,15 @@ function renderWordBankTab(container) {
         btn.onclick = (e) => {
             e.stopPropagation();
             const i = parseInt(btn.dataset.idx);
-            const newVal = prompt('修改内容:', window.wordBank[i]);
+            const old = _wbGetText(window.wordBank[i]);
+            const newVal = prompt('修改内容:', old);
             if (newVal === null || !newVal.trim()) return;
-            window.wordBank[i] = newVal.trim();
+            const cur = window.wordBank[i];
+            if (typeof cur === 'string') {
+                window.wordBank[i] = { text: newVal.trim(), source: 'chat' };
+            } else {
+                window.wordBank[i] = { text: newVal.trim(), source: cur.source || 'chat' };
+            }
             saveWordBank();
             renderReplyLibrary();
         };
@@ -283,6 +349,8 @@ let _searchVisible = false;
 let _searchQuery = '';
 let _searchDebounceTimer = null;
 let _activeGroupFilter = null; 
+// 记录已折叠的分组 id（持久跨渲染）
+let _collapsedGroupIds = new Set();
 
 const GROUP_COLORS = [
     '#FF6B6B','#FF8E53','#FFC542','#51CF66',
@@ -423,7 +491,42 @@ function _renderListContentOnly() {
     }
 
     if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
-        _renderCardViewWithGroups(list, filtered);
+        // 主字卡分类筛选条
+        if (!window.chuanciTexts) window.chuanciTexts = new Set();
+        const ct = window.chuanciTexts;
+        const allCount = customReplies.length;
+        const chuanciCount = customReplies.filter(t => ct.has(t)).length;
+        const manualCount = allCount - chuanciCount;
+
+        const filterBar = document.createElement('div');
+        filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
+        const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
+        const mk = (key, label, count) => {
+            const active = cf === key;
+            return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;">${label} <span style="opacity:.75;">${count}</span></button>`;
+        };
+        filterBar.innerHTML = mk('all','全部',allCount) + mk('manual','手动',manualCount) + mk('chuanci','创词',chuanciCount);
+        list.appendChild(filterBar);
+        filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
+            btn.onclick = () => {
+                window._crCategoryFilter = btn.dataset.crFilter;
+                renderReplyLibrary();
+            };
+        });
+
+        // 按分类过滤后再走原渲染
+        let crFiltered = filtered;
+        if (cf === 'manual') crFiltered = filtered.filter(t => !ct.has(t));
+        else if (cf === 'chuanci') crFiltered = filtered.filter(t => ct.has(t));
+
+        if (crFiltered.length === 0) {
+            const empty = document.createElement('div');
+            empty.innerHTML = renderEmptyState(cf === 'chuanci' ? '还没有创词生成的内容' : (cf === 'manual' ? '还没有手动添加的内容' : '列表空空如也'));
+            list.appendChild(empty.firstElementChild || empty);
+            return;
+        }
+
+        _renderCardViewWithGroups(list, crFiltered);
     } else {
         _renderAtmosphereList(list, filtered);
     }
@@ -507,12 +610,71 @@ function renderReplyLibrary() {
     let filtered = q ? itemsToRender.filter(item => item.toLowerCase().includes(q)) : itemsToRender;
 
     if (filtered.length === 0) {
-        list.innerHTML = renderEmptyState(q ? `未找到"${q}"` : '列表空空如也');
+        // 主字卡空时也要显示 filter tabs
+        if (currentMajorTab === 'reply' && currentSubTab === 'custom' && !q) {
+            if (!window.chuanciTexts) window.chuanciTexts = new Set();
+            const filterBar = document.createElement('div');
+            filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
+            const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
+            const mk = (key, label, count) => {
+                const active = cf === key;
+                return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;font-family:var(--font-family);">${label} <span style="opacity:.75;">${count}</span></button>`;
+            };
+            filterBar.innerHTML = mk('all','全部',0) + mk('manual','手动',0) + mk('chuanci','创词',0);
+            list.appendChild(filterBar);
+            filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
+                btn.onclick = () => {
+                    window._crCategoryFilter = btn.dataset.crFilter;
+                    renderReplyLibrary();
+                };
+            });
+        }
+        const empty = document.createElement('div');
+        empty.innerHTML = renderEmptyState(q ? `未找到"${q}"` : '列表空空如也');
+        list.appendChild(empty.firstElementChild || empty);
         return;
     }
 
     if (_tabHasGroups()) {
-        _renderCardViewWithGroups(list, filtered);
+        // 主字卡分类筛选条（全部/手动/创词）
+        if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
+            if (!window.chuanciTexts) window.chuanciTexts = new Set();
+            const ct = window.chuanciTexts;
+            const allCount = customReplies.length;
+            const chuanciCount = customReplies.filter(t => ct.has(t)).length;
+            const manualCount = allCount - chuanciCount;
+
+            const filterBar = document.createElement('div');
+            filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
+            const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
+            const mk = (key, label, count) => {
+                const active = cf === key;
+                return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;font-family:var(--font-family);">${label} <span style="opacity:.75;">${count}</span></button>`;
+            };
+            filterBar.innerHTML = mk('all','全部',allCount) + mk('manual','手动',manualCount) + mk('chuanci','创词',chuanciCount);
+            list.appendChild(filterBar);
+            filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
+                btn.onclick = () => {
+                    window._crCategoryFilter = btn.dataset.crFilter;
+                    renderReplyLibrary();
+                };
+            });
+
+            let crFiltered = filtered;
+            if (cf === 'manual') crFiltered = filtered.filter(t => !ct.has(t));
+            else if (cf === 'chuanci') crFiltered = filtered.filter(t => ct.has(t));
+
+            if (crFiltered.length === 0) {
+                const empty = document.createElement('div');
+                empty.innerHTML = renderEmptyState(cf === 'chuanci' ? '还没有创词生成的内容' : (cf === 'manual' ? '还没有手动添加的内容' : '列表空空如也'));
+                list.appendChild(empty.firstElementChild || empty);
+                return;
+            }
+
+            _renderCardViewWithGroups(list, crFiltered);
+        } else {
+            _renderCardViewWithGroups(list, filtered);
+        }
     } else {
         _renderAtmosphereList(list, filtered);
     }
@@ -791,6 +953,10 @@ function _renderModernToolbar() {
             } else {
                 const deletedTexts = indices.map(i => customReplies[i]);
                 indices.forEach(i => customReplies.splice(i, 1));
+                // 同步清理 chuanciTexts 标记
+                if (window.chuanciTexts) {
+                    deletedTexts.forEach(t => window.chuanciTexts.delete(t));
+                }
                 if (customReplyGroups) {
                     customReplyGroups.forEach(g => {
                         if (g.items) g.items = g.items.filter(t => !deletedTexts.includes(t));
@@ -874,7 +1040,7 @@ function _renderCardViewWithGroups(list, items) {
 function _renderGroupBlock(list, group, groupItems, disabledSet, isUngrouped = false) {
     const section = document.createElement('div');
     section.className = 'rl-group-block';
-    const isCollapsed = group._collapsed || false;
+    const isCollapsed = _collapsedGroupIds.has(group.id);
     const isDisabled = group.disabled;
     const colorDot = group.color || '#868E96';
 
@@ -933,10 +1099,12 @@ function _renderGroupBlock(list, group, groupItems, disabledSet, isUngrouped = f
 
     section.querySelector(`#grp-hdr-${group.id}`).addEventListener('click', e => {
         if (e.target.closest('.grp-edit-btn') || e.target.closest(`#grp-tag-${group.id}`) || e.target.closest('.grp-select-all-btn')) return;
-        group._collapsed = !group._collapsed;
-        body.style.display = group._collapsed ? 'none' : 'block';
-        section.querySelector('.grp-chevron').style.transform = group._collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
-        section.querySelector('.rl-group-header').classList.toggle('collapsed', !!group._collapsed);
+        const nowCollapsed = !_collapsedGroupIds.has(group.id);
+        if (nowCollapsed) _collapsedGroupIds.add(group.id);
+        else _collapsedGroupIds.delete(group.id);
+        body.style.display = nowCollapsed ? 'none' : 'block';
+        section.querySelector('.grp-chevron').style.transform = nowCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+        section.querySelector('.rl-group-header').classList.toggle('collapsed', nowCollapsed);
     });
 
     const tag = section.querySelector(`#grp-tag-${group.id}`);
@@ -1626,7 +1794,12 @@ function deleteItem(index) {
     if (!confirm('确定删除吗？')) return;
     const ctx = _getGroupCtx();
     const item = _tabHasGroups() ? ctx.items[index] : null;
-    if (currentMajorTab === 'reply' && currentSubTab === 'custom') customReplies.splice(index, 1);
+    if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
+        const deletedText = customReplies[index];
+        customReplies.splice(index, 1);
+        // 同步清理 chuanciTexts 标记
+        if (window.chuanciTexts && deletedText) window.chuanciTexts.delete(deletedText);
+    }
     else if (currentSubTab === 'pokes') customPokes.splice(index, 1);
     else if (currentSubTab === 'statuses') customStatuses.splice(index, 1);
     else if (currentSubTab === 'mottos') customMottos.splice(index, 1);
@@ -1638,32 +1811,88 @@ function deleteItem(index) {
     renderReplyLibrary();
 }
 
+// 自适应文本框弹窗（替代 prompt）
+function _showAutoTextModal(title, defaultValue, onConfirm) {
+    // 创建容器
+    let mask = document.getElementById('_auto-text-modal');
+    if (mask) mask.remove();
+    mask = document.createElement('div');
+    mask.id = '_auto-text-modal';
+    mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    mask.innerHTML = `
+        <div style="background:var(--secondary-bg);border-radius:18px;padding:20px;width:100%;max-width:420px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.25);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                <button id="_atm-close" style="width:28px;height:28px;border-radius:50%;border:none;background:var(--message-received-bg);color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+                <div style="font-size:15px;font-weight:600;color:var(--text-primary);">${title}</div>
+                <div style="width:28px"></div>
+            </div>
+            <textarea id="_atm-input" style="width:100%;min-height:60px;max-height:50vh;padding:10px 12px;border:1px solid var(--border-color);border-radius:10px;background:var(--primary-bg);color:var(--text-primary);font-size:14px;font-family:var(--font-family);outline:none;resize:none;line-height:1.6;margin-bottom:14px;overflow-y:auto;"></textarea>
+            <button id="_atm-ok" style="width:100%;padding:11px;border-radius:10px;border:none;background:var(--accent-color);color:#fff;font-size:14px;font-weight:600;font-family:var(--font-family);cursor:pointer;">确定</button>
+        </div>
+    `;
+    document.body.appendChild(mask);
+    const ta = mask.querySelector('#_atm-input');
+    ta.value = defaultValue || '';
+
+    // 自适应高度
+    const resize = () => {
+        ta.style.height = 'auto';
+        const sh = Math.min(ta.scrollHeight, window.innerHeight * 0.5);
+        ta.style.height = sh + 'px';
+    };
+    ta.addEventListener('input', resize);
+    setTimeout(() => { resize(); ta.focus(); }, 50);
+
+    const close = () => mask.remove();
+    mask.querySelector('#_atm-close').onclick = close;
+    mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+    mask.querySelector('#_atm-ok').onclick = () => {
+        const val = ta.value;
+        close();
+        if (typeof onConfirm === 'function') onConfirm(val);
+    };
+}
+
 function editItem(index, oldText) {
-    let newText;
     if (currentSubTab === 'intros') {
         const parts = oldText.split('|');
-        const l1 = prompt('修改主标题:', parts[0]);
-        if (l1 === null) return;
-        const l2 = prompt('修改副标题:', parts[1] || '');
-        if (l2 === null) return;
-        newText = `${l1}|${l2}`;
-    } else {
-        newText = prompt('修改内容:', oldText);
+        _showAutoTextModal('修改主标题', parts[0] || '', (l1) => {
+            if (l1 === null || l1.trim() === '') return;
+            _showAutoTextModal('修改副标题', parts[1] || '', (l2) => {
+                if (l2 === null) return;
+                const newText = `${l1.trim()}|${l2.trim()}`;
+                _applyEditItem(index, oldText, newText);
+            });
+        });
+        return;
     }
-    if (newText === null || newText.trim() === '') return;
+    _showAutoTextModal('修改内容', oldText, (newText) => {
+        if (newText === null || newText.trim() === '') return;
+        _applyEditItem(index, oldText, newText.trim());
+    });
+}
+
+function _applyEditItem(index, oldText, newText) {
     if (_tabHasGroups()) {
         const ctx = _getGroupCtx();
         if (ctx.groups) {
             ctx.groups.forEach(g => {
-                if (g.items) { const i = g.items.indexOf(oldText); if (i >= 0) g.items[i] = newText.trim(); }
+                if (g.items) { const i = g.items.indexOf(oldText); if (i >= 0) g.items[i] = newText; }
             });
         }
     }
-    if (currentMajorTab === 'reply' && currentSubTab === 'custom') customReplies[index] = newText.trim();
-    else if (currentSubTab === 'pokes') customPokes[index] = newText.trim();
-    else if (currentSubTab === 'statuses') customStatuses[index] = newText.trim();
-    else if (currentSubTab === 'mottos') customMottos[index] = newText.trim();
-    else if (currentSubTab === 'intros') customIntros[index] = newText.trim();
+    if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
+        customReplies[index] = newText;
+        // 如果旧文本在 chuanciTexts 里，迁移到新文本
+        if (window.chuanciTexts && window.chuanciTexts.has(oldText)) {
+            window.chuanciTexts.delete(oldText);
+            window.chuanciTexts.add(newText);
+        }
+    }
+    else if (currentSubTab === 'pokes') customPokes[index] = newText;
+    else if (currentSubTab === 'statuses') customStatuses[index] = newText;
+    else if (currentSubTab === 'mottos') customMottos[index] = newText;
+    else if (currentSubTab === 'intros') customIntros[index] = newText;
     throttledSaveData();
     renderReplyLibrary();
 }

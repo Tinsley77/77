@@ -305,7 +305,8 @@ const loadData = async () => {
             localforage.getItem(getStorageKey('myStickerLibrary')),
             localforage.getItem(getStorageKey('customReplyGroups')),
             localforage.getItem(getStorageKey('customPokeGroups')),
-            localforage.getItem(getStorageKey('customStatusGroups'))
+            localforage.getItem(getStorageKey('customStatusGroups')),
+            localforage.getItem(getStorageKey('chuanciTexts'))
         ]);
         const getVal = (index) => results[index].status === 'fulfilled' ? results[index].value : null;
 
@@ -330,6 +331,7 @@ const loadData = async () => {
         const savedReplyGroups = getVal(18);
         const savedPokeGroups = getVal(19);
         const savedStatusGroups = getVal(20);
+        const savedChuanciTexts = getVal(21);
 
         if (savedPartnerPersonas) partnerPersonas = savedPartnerPersonas;
 
@@ -392,6 +394,11 @@ const loadData = async () => {
         }
 
         if (savedCustomReplies) customReplies = savedCustomReplies;
+        if (savedChuanciTexts && Array.isArray(savedChuanciTexts)) {
+            window.chuanciTexts = new Set(savedChuanciTexts);
+        } else {
+            window.chuanciTexts = new Set();
+        }
         if (savedReplyGroups) window.customReplyGroups = savedReplyGroups;
         if (savedPokeGroups) window.customPokeGroups = savedPokeGroups;
         if (savedStatusGroups) window.customStatusGroups = savedStatusGroups;
@@ -569,6 +576,7 @@ const saveData = async () => {
     const promises = [
         { key: 'chatSettings',           val: () => localforage.setItem(getStorageKey('chatSettings'), settings) },
         { key: 'customReplies',          val: () => localforage.setItem(getStorageKey('customReplies'), customReplies) },
+        { key: 'chuanciTexts',           val: () => localforage.setItem(getStorageKey('chuanciTexts'), Array.from(window.chuanciTexts || chuanciTexts || [])) },
         { key: 'customReplyGroups',      val: () => localforage.setItem(getStorageKey('customReplyGroups'), window.customReplyGroups || []) },
         { key: 'customPokeGroups',        val: () => localforage.setItem(getStorageKey('customPokeGroups'), window.customPokeGroups || []) },
         { key: 'customStatusGroups',      val: () => localforage.setItem(getStorageKey('customStatusGroups'), window.customStatusGroups || []) },
@@ -1642,6 +1650,22 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 return;
             }
 
+            // ── 对方申请追加字卡（10% 概率，需创词模块已配置 Key 才触发）──
+            if (typeof window.Chuanci !== 'undefined' &&
+                typeof window.Chuanci.canPartnerRequest === 'function' &&
+                window.Chuanci.canPartnerRequest() &&
+                Math.random() < 0.10) {
+                try {
+                    window.Chuanci.showPartnerRequestModal({
+                        partnerName: (settings && settings.partnerName) || '对方',
+                        partnerAvatar: (DOMElements.partner.avatar && DOMElements.partner.avatar.src) || '',
+                        myName: (settings && settings.myName) || '我',
+                        myAvatar: (DOMElements.user && DOMElements.user.avatar && DOMElements.user.avatar.src) || ''
+                    });
+                } catch(e) { console.warn('[Chuanci] 申请字卡触发失败:', e); }
+                return;
+            }
+
 
             // ── 造词库清理检查 ──
             if (typeof _maybeCleanWordBank === 'function') _maybeCleanWordBank();
@@ -1680,7 +1704,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 : [];
             for (let i = 0; i < replyCount; i++) {
                 // ── 每条独立 50/50：走造词库 or 随机生成新词 ──
-                const _wb = window.wordBank || [];
+                const _wbRaw = window.wordBank || [];
+                const _wb = _wbRaw.map(it => typeof it === 'string' ? it : (it && it.text) || '').filter(Boolean);
                 let activePool;
                 if (Math.random() < 0.5 && _wb.length > 0) {
                     // 50%：直接从造词库随机抽（造词库为空时降级到生成）
@@ -1694,8 +1719,8 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                         parts.push(String(mergedPool[Math.floor(Math.random() * mergedPool.length)]).trim());
                     }
                     const generated = parts.join('');
-                    if (typeof _pushToWordBank === 'function') _pushToWordBank(generated);
-                    else { window.wordBank = window.wordBank || []; window.wordBank.push(generated); }
+                    if (typeof _pushToWordBank === 'function') _pushToWordBank(generated, 'chat');
+                    else { window.wordBank = window.wordBank || []; window.wordBank.push({ text: generated, source: 'chat' }); }
                     if (typeof saveWordBank === 'function') saveWordBank();
                     activePool = [generated];
                 }
