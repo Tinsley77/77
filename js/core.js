@@ -402,6 +402,43 @@ const loadData = async () => {
         if (savedReplyGroups) window.customReplyGroups = savedReplyGroups;
         if (savedPokeGroups) window.customPokeGroups = savedPokeGroups;
         if (savedStatusGroups) window.customStatusGroups = savedStatusGroups;
+
+        // 创词系统分组：确保它存在，并把所有 chuanciTexts 里的字卡都归入该分组
+        try {
+            if (!window.customReplyGroups) window.customReplyGroups = [];
+            // 顶层变量 customReplyGroups 同步
+            if (typeof customReplyGroups === 'undefined' || customReplyGroups !== window.customReplyGroups) {
+                customReplyGroups = window.customReplyGroups;
+            }
+            let chuanciGroup = window.customReplyGroups.find(g => g && g.id === 'sys_chuanci');
+            if (!chuanciGroup) {
+                chuanciGroup = {
+                    id: 'sys_chuanci',
+                    name: '创词',
+                    color: 'var(--accent-color)',
+                    icon: '✨',
+                    system: true,
+                    items: []
+                };
+                window.customReplyGroups.push(chuanciGroup);
+            }
+            if (!Array.isArray(chuanciGroup.items)) chuanciGroup.items = [];
+
+            // 旧数据合并：把 chuanciTexts 集合里所有还在主字卡里的，加入这个分组
+            if (window.chuanciTexts && window.chuanciTexts.size > 0 && customReplies) {
+                let migrated = 0;
+                window.chuanciTexts.forEach(text => {
+                    if (customReplies.indexOf(text) === -1) return;
+                    if (chuanciGroup.items.indexOf(text) === -1) {
+                        chuanciGroup.items.push(text);
+                        migrated++;
+                    }
+                });
+                if (migrated > 0) {
+                    console.log('[Chuanci] 旧数据合并：' + migrated + ' 条字卡归入"创词"分组');
+                }
+            }
+        } catch(e) { console.warn('[Chuanci] 系统分组初始化失败:', e); }
         if (savedAnniversaries) anniversaries = savedAnniversaries;
         if (savedStickers) stickerLibrary = savedStickers;
         if (savedMyStickers) myStickerLibrary = savedMyStickers;
@@ -1650,10 +1687,9 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 return;
             }
 
-            // ── 对方申请追加字卡（10% 概率，需创词模块已配置 Key 才触发）──
+            // ── 对方申请追加字卡（10% 概率，总是触发，没 Key 时允许后会提示失败）──
             if (typeof window.Chuanci !== 'undefined' &&
-                typeof window.Chuanci.canPartnerRequest === 'function' &&
-                window.Chuanci.canPartnerRequest() &&
+                typeof window.Chuanci.showPartnerRequestModal === 'function' &&
                 Math.random() < 0.10) {
                 try {
                     window.Chuanci.showPartnerRequestModal({

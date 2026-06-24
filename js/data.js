@@ -30,6 +30,14 @@
         +       '<div class="dm-stat-block"><div class="dm-stat-block-icon" style="color:#3BC8A4"><i class="fas fa-images"></i></div><div class="dm-stat-pill-val" id="dm-stat-media">—</div><div class="dm-stat-pill-key">图片媒体</div></div>'
         +     '</div>'
         +     '<div class="dm-progress-track"><div class="dm-progress-fill" id="dm-storage-bar" style="width:0%"></div></div>'
+        +     '<button class="dm-compress-btn" id="dm-compress-images-btn">'
+        +       '<div class="dm-compress-btn-icon"><i class="fas fa-compress-alt"></i></div>'
+        +       '<div class="dm-compress-btn-info">'
+        +         '<div class="dm-compress-btn-title">一键压缩</div>'
+        +         '<div class="dm-compress-btn-desc">点击对图片进行压缩处理</div>'
+        +       '</div>'
+        +       '<i class="fas fa-chevron-right dm-compress-btn-arrow"></i>'
+        +     '</button>'
         +   '</div>'
 
         +   '<div class="dm-section-label"><i class="fas fa-cloud-upload-alt"></i> 备份与恢复</div>'
@@ -317,6 +325,11 @@
 
         var tileChatBackup = mc.querySelector('#dm-tile-chat-backup');
         if (tileChatBackup) tileChatBackup.addEventListener('click', function () { openDrawer('dm-drawer-chat'); });
+
+        var compressBtn = mc.querySelector('#dm-compress-images-btn');
+        if (compressBtn) compressBtn.addEventListener('click', function () {
+            _showImageCompressDialog();
+        });
 
         var fullDrawer = document.getElementById('dm-drawer-full');
         if (fullDrawer) {
@@ -681,3 +694,121 @@ document.addEventListener('DOMContentLoaded', function() {
         statusEl.textContent = '关闭状态 — 开启后可在后台接收消息提醒';
     }
 });
+
+// 一键压缩图片对话框
+function _showImageCompressDialog() {
+    const fmtSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    };
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.6);
+        backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:16px;
+    `;
+    overlay.innerHTML = `
+        <div style="background:var(--secondary-bg);border-radius:20px;padding:22px;
+                    width:100%;max-width:380px;box-shadow:0 30px 80px rgba(0,0,0,0.3);">
+            <div id="dm-compress-step-confirm">
+                <div style="font-size:36px;text-align:center;margin-bottom:10px;">📦</div>
+                <div style="font-size:17px;font-weight:700;text-align:center;color:var(--text-primary);margin-bottom:8px;">一键压缩图片</div>
+                <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:18px;">
+                    将对当前所有历史图片进行压缩处理：<br>
+                    • 最大宽度 1080px<br>
+                    • JPEG 质量 75%<br>
+                    • 通常能节省 70%~95% 的体积<br>
+                    • 此过程不可撤销
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button id="dm-compress-cancel" style="
+                        flex:1;padding:12px;border-radius:12px;border:none;
+                        background:var(--message-received-bg);color:var(--text-primary);
+                        font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+                    ">取消</button>
+                    <button id="dm-compress-go" style="
+                        flex:2;padding:12px;border-radius:12px;border:none;
+                        background:var(--accent-color);color:#fff;
+                        font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+                    ">开始压缩</button>
+                </div>
+            </div>
+            <div id="dm-compress-step-progress" style="display:none;text-align:center;">
+                <div style="font-size:36px;margin-bottom:10px;">⏳</div>
+                <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:14px;">正在压缩…</div>
+                <div id="dm-compress-progress-text" style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">已处理 0 张</div>
+                <div style="height:6px;background:var(--message-received-bg);border-radius:3px;overflow:hidden;">
+                    <div id="dm-compress-progress-bar" style="height:100%;width:0%;background:var(--accent-color);transition:width .2s;"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:12px;">请勿关闭页面</div>
+            </div>
+            <div id="dm-compress-step-done" style="display:none;text-align:center;">
+                <div style="font-size:36px;margin-bottom:10px;">✨</div>
+                <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:12px;">压缩完成</div>
+                <div id="dm-compress-result-text" style="font-size:13px;color:var(--text-secondary);line-height:1.7;margin-bottom:18px;text-align:left;padding:12px 14px;background:var(--primary-bg);border-radius:10px;"></div>
+                <button id="dm-compress-done" style="
+                    width:100%;padding:12px;border-radius:12px;border:none;
+                    background:var(--accent-color);color:#fff;
+                    font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+                ">完成</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#dm-compress-cancel').addEventListener('click', () => overlay.remove());
+
+    overlay.querySelector('#dm-compress-go').addEventListener('click', async () => {
+        overlay.querySelector('#dm-compress-step-confirm').style.display = 'none';
+        overlay.querySelector('#dm-compress-step-progress').style.display = 'block';
+
+        try {
+            const stats = await compressAllHistoricalImages((s) => {
+                const text = overlay.querySelector('#dm-compress-progress-text');
+                const bar = overlay.querySelector('#dm-compress-progress-bar');
+                if (text) text.textContent = '已处理 ' + s.processed + (s.total ? ' / ' + s.total : '') + ' 张';
+                if (bar && s.total) {
+                    bar.style.width = Math.min(100, Math.round(s.processed * 100 / s.total)) + '%';
+                }
+            });
+
+            // 显示结果
+            overlay.querySelector('#dm-compress-step-progress').style.display = 'none';
+            overlay.querySelector('#dm-compress-step-done').style.display = 'block';
+            const saved = stats.before - stats.after;
+            const ratio = stats.before > 0 ? Math.round(saved * 100 / stats.before) : 0;
+            overlay.querySelector('#dm-compress-result-text').innerHTML = `
+                <div>📷 处理图片：<b>${stats.processed}</b> 张</div>
+                <div>📦 压缩前：<b>${fmtSize(stats.before)}</b></div>
+                <div>📦 压缩后：<b>${fmtSize(stats.after)}</b></div>
+                <div>💾 节省：<b style="color:var(--accent-color)">${fmtSize(saved)} (${ratio}%)</b></div>
+                ${stats.errors > 0 ? '<div style="color:#ef4444;margin-top:4px;">⚠️ ' + stats.errors + ' 张处理失败</div>' : ''}
+            `;
+
+            // 刷新存储用量显示
+            if (typeof refreshStorageUsage === 'function') {
+                try { refreshStorageUsage(); } catch(e) {}
+            }
+        } catch (e) {
+            console.error('一键压缩失败:', e);
+            overlay.remove();
+            if (typeof showNotification === 'function') {
+                showNotification('压缩失败：' + e.message, 'error');
+            } else {
+                alert('压缩失败：' + e.message);
+            }
+        }
+    });
+
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            // 进度中不允许关闭
+            const inProgress = overlay.querySelector('#dm-compress-step-progress');
+            if (inProgress && inProgress.style.display !== 'none') return;
+            overlay.remove();
+        }
+    });
+
+    overlay.querySelector('#dm-compress-done').addEventListener('click', () => overlay.remove());
+}

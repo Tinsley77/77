@@ -10990,6 +10990,7 @@
 .cc-history-link {
     text-align: center;
     padding: 8px 0;
+    margin-bottom: 80px; /* 让出 footer（生成按钮）的位置 */
     color: var(--text-secondary);
     font-size: 13px;
     cursor: pointer;
@@ -11239,6 +11240,7 @@
 }
 .cc-manage-icon-btn:hover { background: var(--message-received-bg); }
 .cc-manage-icon-btn.delete { color: #ef4444; }
+.cc-manage-icon-btn.edit { color: var(--accent-color); }
 .cc-manage-icon-btn.drag { cursor: grab; touch-action: none; }
 .cc-manage-icon-btn.drag:active { cursor: grabbing; }
 
@@ -11381,7 +11383,25 @@
     transform: translateX(-50%) translateY(0);
 }
 
-#chuanci-modal #cc-view-edit { padding: 16px; }
+#chuanci-modal #cc-view-edit { padding: 0 16px; }
+#chuanci-modal #cc-view-edit > #cc-edit-modules { padding: 16px 0 90px; }
+#chuanci-modal #cc-view-edit > .cc-header,
+#chuanci-modal #cc-view-history > .cc-header,
+#chuanci-modal #cc-view-api > .cc-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--secondary-bg);
+    margin: 0 -16px; /* 让 sticky header 占满左右两侧，因为容器有 padding */
+}
+#chuanci-modal #cc-view-history > .cc-header,
+#chuanci-modal #cc-view-api > .cc-header {
+    margin: 0; /* history/api 没有左右 padding */
+}
+#chuanci-modal #cc-view-history,
+#chuanci-modal #cc-view-api {
+    padding-bottom: 90px;
+}
 
 /* 创词 - 历史详情卡片新样式 */
 .cc-day-session-card {
@@ -11521,3 +11541,76 @@
     color: #fff;
 }
 .cc-pr-btn-allow:hover { filter: brightness(1.08); }
+
+/* 备份模块选择面板动画 */
+@keyframes bkSlideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* 创词 - 隐藏模块的视觉样式 */
+.cc-manage-item.is-hidden { opacity: 0.5; }
+.cc-manage-icon-btn.visibility { color: var(--text-secondary); }
+.cc-manage-icon-btn.visibility:hover { color: var(--text-primary); }
+.cc-manage-item-hidden-tag {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    background: var(--message-received-bg);
+    padding: 1px 6px;
+    border-radius: 8px;
+}
+.cc-tab.is-hidden {
+    opacity: 0.5;
+    background: transparent;
+    border-style: dashed;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+/* 一键压缩按钮 */
+.dm-compress-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-family: var(--font-family);
+    text-align: left;
+}
+.dm-compress-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(var(--accent-color-rgb), 0.04);
+}
+.dm-compress-btn-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: rgba(var(--accent-color-rgb), 0.12);
+    color: var(--accent-color);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 15px;
+}
+.dm-compress-btn-info { flex: 1; min-width: 0; }
+.dm-compress-btn-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+.dm-compress-btn-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.dm-compress-btn-arrow {
+    color: var(--text-secondary);
+    font-size: 12px;
+    flex-shrink: 0;
+}

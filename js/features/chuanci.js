@@ -37,7 +37,7 @@
         ]}
     ];
 
-    const API_KEY_TTL_MS = 24 * 60 * 60 * 1000; // 24 小时
+    const API_KEY_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 2 周（14 天）
 
     let state = {
         modules: [],
@@ -132,7 +132,7 @@
         const tabbar = document.getElementById('cc-tabbar');
         if (!tabbar) return;
         tabbar.innerHTML = state.modules.map(m =>
-            `<div class="cc-tab" onclick="Chuanci.openView('edit')">${escapeHtml(m.name)}</div>`
+            `<div class="cc-tab ${m.hidden ? 'is-hidden' : ''}" onclick="Chuanci.openView('edit')">${escapeHtml(m.name)}${m.hidden ? ' <i class="fas fa-eye-slash" style="font-size:10px;opacity:.7;margin-left:2px;"></i>' : ''}</div>`
         ).join('');
 
         const content = document.getElementById('cc-content');
@@ -192,13 +192,19 @@
     function clickGenerate() {
         const wasCleared = clearExpiredKeyIfNeeded();
         if (wasCleared) {
-            showToast('<i class="fas fa-clock"></i> API Key 已过期清除（24小时安全机制），请重新填入', () => openView('api'));
+            showToast('<i class="fas fa-clock"></i> API Key 已过期清除（2 周安全机制），请重新填入', () => openView('api'));
             return;
         }
 
         const hasKey = !!state.apiConfig.apikey;
         const durationOn = state.settings.durationEnabled;
         const selectedTags = drawTags();
+
+        // 所有大模块都被隐藏 / 模块为空时，无法抽取
+        if (Object.keys(selectedTags).length === 0) {
+            showToast('<i class="fas fa-exclamation-circle"></i> 当前没有可抽取的模块（请检查是否全部隐藏）');
+            return;
+        }
 
         if (!hasKey) {
             doFortuneMode(selectedTags);
@@ -214,8 +220,11 @@
     function drawTags() {
         const result = {};
         state.modules.forEach(m => {
+            // 隐藏的大模块不参与抽取，也不出现在结果里
+            if (m.hidden) return;
             const nonDefault = m.tags.filter(t => !t.isDefault);
-            if (Math.random() < 0.2 && nonDefault.length > 0) {
+            // 80% 抽具体词 / 20% 抽到"无"
+            if (Math.random() < 0.8 && nonDefault.length > 0) {
                 result[m.name] = nonDefault[Math.floor(Math.random() * nonDefault.length)].label;
             } else {
                 result[m.name] = '无';
@@ -239,8 +248,7 @@
     // 主项目调用：弹出"对方申请追加字卡"弹窗
     // 参数：{ partnerName, partnerAvatar, myName, myAvatar }
     function showPartnerRequestModal(opts) {
-        if (!canPartnerRequest()) return; // 安全兜底
-
+        // 不再做 Key 检查，允许后会再检查并失败提示
         const modal = document.getElementById('cc-partner-request-modal');
         if (!modal) return;
 
@@ -323,13 +331,32 @@
 
     // 对方申请通过后，按用户当前的"时长开关"决定即时还是延迟
     async function triggerPartnerGeneration() {
+        // 先检查能不能生成，失败就用拒绝样式系统消息提示原因
+        clearExpiredKeyIfNeeded();
+        const cfg = state.apiConfig;
+        let failReason = '';
+        if (!cfg.apikey) failReason = '未填入 API Key';
+        else if (!cfg.baseurl) failReason = '未填入接口地址';
+        else if (!cfg.model) failReason = '未填入调用模型';
+
+        if (failReason) {
+            const myName = (typeof settings !== 'undefined' && settings.myName) || '我';
+            const text = `本次字卡生成失败，原因：${failReason}`;
+            if (typeof sendCallEvent === 'function') {
+                try { sendCallEvent('fa-circle-exclamation', text, null); }
+                catch(e) { _fallbackSysMsg(text); }
+            } else {
+                _fallbackSysMsg(text);
+            }
+            return;
+        }
+
         const selectedTags = drawTags();
         const durationOn = state.settings.durationEnabled;
 
         if (!durationOn) {
             // 即时模式：直接生成
             doInstantMode(selectedTags);
-            // 一级聊天页提示
             if (typeof showNotification === 'function') {
                 showNotification('字卡已增加完成', 'success', 3000);
             }
@@ -424,6 +451,34 @@
     }
 
     // === 桥接：写入主字卡库（仅 AI 成功生成的词条触发，抽签结果不写入）===
+    // 确保创词系统分组存在，返回该分组对象
+    function _ensureChuanciSystemGroup() {
+        if (typeof customReplyGroups === 'undefined') {
+            // state.js 顶层声明的 customReplyGroups 可能存在 window 上
+            if (typeof window !== 'undefined' && window.customReplyGroups) {
+                // 用 window 的版本
+            } else {
+                return null;
+            }
+        }
+        const groups = (typeof customReplyGroups !== 'undefined') ? customReplyGroups : window.customReplyGroups;
+        if (!Array.isArray(groups)) return null;
+        let g = groups.find(x => x && x.id === 'sys_chuanci');
+        if (!g) {
+            g = {
+                id: 'sys_chuanci',
+                name: '创词',
+                color: 'var(--accent-color)',
+                icon: '✨',
+                system: true, // 系统保留分组，不可编辑/删除/拖动
+                items: []
+            };
+            groups.push(g);
+        }
+        if (!Array.isArray(g.items)) g.items = [];
+        return g;
+    }
+
     function pushToMainCardLibrary(texts) {
         if (!Array.isArray(texts) || texts.length === 0) return;
         // customReplies 在 state.js 顶层用 let 声明（全局作用域），不在 window 上
@@ -433,6 +488,9 @@
             return;
         }
         if (!window.chuanciTexts) window.chuanciTexts = new Set();
+
+        // 确保创词分组存在
+        const chuanciGroup = _ensureChuanciSystemGroup();
 
         let added = 0;
         texts.forEach(t => {
@@ -444,6 +502,10 @@
                 added++;
             }
             window.chuanciTexts.add(text);
+            // 加入"创词"分组（同样去重）
+            if (chuanciGroup && chuanciGroup.items.indexOf(text) === -1) {
+                chuanciGroup.items.push(text);
+            }
         });
         // 触发主项目保存
         if (typeof throttledSaveData === 'function') throttledSaveData();
@@ -452,6 +514,28 @@
             try { renderReplyLibrary(); } catch(e) {}
         }
         console.log('[Chuanci] 已写入主字卡 ' + added + ' 条新词，共标记 ' + texts.length + ' 条创词');
+    }
+
+    // 旧数据迁移：把 chuanciTexts 集合里所有还在主字卡里的文本，
+    // 都加入"创词"分组（如果分组里没这条文本）
+    function migrateLegacyChuanciCards() {
+        if (typeof customReplies === 'undefined') return;
+        if (!window.chuanciTexts || window.chuanciTexts.size === 0) return;
+        const chuanciGroup = _ensureChuanciSystemGroup();
+        if (!chuanciGroup) return;
+
+        let migrated = 0;
+        window.chuanciTexts.forEach(text => {
+            if (customReplies.indexOf(text) === -1) return; // 主字卡里已无此条
+            if (chuanciGroup.items.indexOf(text) === -1) {
+                chuanciGroup.items.push(text);
+                migrated++;
+            }
+        });
+        if (migrated > 0) {
+            console.log('[Chuanci] 旧数据迁移：' + migrated + ' 条字卡归入"创词"分组');
+            if (typeof throttledSaveData === 'function') throttledSaveData();
+        }
     }
 
     // ===== AI 调用（真实接入，按 base_url 自动识别） =====
@@ -467,7 +551,7 @@
             const v = selectedTags[k];
             if (v && v !== '无') tagLines.push(`${k}：${v}`);
         });
-        const userPrompt = `请基于以下标签生成 5 条情感类内容，每条独立一行，不加序号、不加解释、不加引号。\n\n${tagLines.length ? tagLines.join('\n') : '（无具体标签限制）'}`;
+        const userPrompt = `请基于以下标签生成 3 段内容，每段独立一行，不加序号、不加解释、不加引号。\n\n${tagLines.length ? tagLines.join('\n') : '（无具体标签限制）'}`;
 
         const systemPrompt = cfg.persona || '';
         const url = cfg.baseurl.trim();
@@ -491,7 +575,7 @@
                     },
                     body: JSON.stringify({
                         model: cfg.model,
-                        max_tokens: 150,
+                        max_tokens: 300,
                         system: systemPrompt || undefined,
                         messages: [{ role: 'user', content: userPrompt }]
                     })
@@ -508,7 +592,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{ role: 'user', parts: parts }],
-                        generationConfig: { maxOutputTokens: 150 }
+                        generationConfig: { maxOutputTokens: 300 }
                     })
                 });
             } else {
@@ -524,7 +608,7 @@
                     },
                     body: JSON.stringify({
                         model: cfg.model,
-                        max_tokens: 150,
+                        max_tokens: 300,
                         messages: messages
                     })
                 });
@@ -569,44 +653,17 @@
             .filter(s => s.length > 0);
 
         if (lines.length === 0) throw new Error('AI 返回内容为空');
-        // 不够 5 条也用，多了截 5 条
-        return lines.slice(0, 5);
+        // 不够 3 段也用，多了截 3 段
+        return lines.slice(0, 3);
     }
 
-    function pickCandidates(candidates) {
-        // 三选一：1条 50% / 2条 30% / 重新生成 20%
-        const r = Math.random();
-        if (r < 0.5) {
-            // 抽 1 条
-            const shuffled = candidates.slice().sort(() => Math.random() - 0.5);
-            return { action: 'take', content: [shuffled[0]] };
-        } else if (r < 0.8) {
-            // 抽 2 条
-            const shuffled = candidates.slice().sort(() => Math.random() - 0.5);
-            return { action: 'take', content: [shuffled[0], shuffled[1]] };
-        } else {
-            // 重新生成
-            return { action: 'regenerate' };
-        }
-    }
-
-    // 反复尝试，最多重生成 3 次，仍重生成则取消
+    // 直接使用 AI 返回的全部段落（不再随机抽 1-2 条）
     async function runGenerationFlow(selectedTags) {
-        let regenerateCount = 0;
-        const maxRegenerate = 3;
-        while (regenerateCount <= maxRegenerate) {
-            const candidates = await callAI(selectedTags);
-            const result = pickCandidates(candidates);
-            if (result.action === 'take') {
-                return { cancelled: false, content: result.content };
-            }
-            regenerateCount++;
-            if (regenerateCount > maxRegenerate) {
-                return { cancelled: true };
-            }
-            // 继续 while 循环，重新调 AI
+        const candidates = await callAI(selectedTags);
+        if (!candidates || candidates.length === 0) {
+            return { cancelled: true };
         }
-        return { cancelled: true };
+        return { cancelled: false, content: candidates };
     }
 
     function recordSession(session) {
@@ -776,13 +833,42 @@
             return;
         }
         list.innerHTML = state.modules.map((m, idx) => `
-            <div class="cc-manage-item" data-idx="${idx}">
+            <div class="cc-manage-item ${m.hidden ? 'is-hidden' : ''}" data-idx="${idx}">
                 <button class="cc-manage-icon-btn drag" data-drag="${idx}" title="拖拽排序"><i class="fas fa-bars"></i></button>
-                <div class="cc-manage-item-name">${escapeHtml(m.name)} <span class="cc-manage-item-count">(${m.tags.length})</span></div>
+                <div class="cc-manage-item-name">${escapeHtml(m.name)} <span class="cc-manage-item-count">(${m.tags.length})</span>${m.hidden ? '<span class="cc-manage-item-hidden-tag">已隐藏</span>' : ''}</div>
+                <button class="cc-manage-icon-btn visibility" onclick="Chuanci.toggleModuleVisibility(${idx})" title="${m.hidden ? '显示' : '隐藏'}"><i class="fas ${m.hidden ? 'fa-eye-slash' : 'fa-eye'}"></i></button>
+                <button class="cc-manage-icon-btn edit" onclick="Chuanci.editModuleName(${idx})" title="编辑名称"><i class="fas fa-pen"></i></button>
                 <button class="cc-manage-icon-btn delete" onclick="Chuanci.deleteModuleConfirm(${idx})" title="删除模块"><i class="fas fa-minus-circle"></i></button>
             </div>
         `).join('');
         setupManageDrag();
+    }
+
+    function toggleModuleVisibility(idx) {
+        const m = state.modules[idx];
+        if (!m) return;
+        m.hidden = !m.hidden;
+        saveModules();
+        renderManageList();
+        renderHome(); // 同步刷新主页 tab 显示
+        showToast(m.hidden ? '<i class="fas fa-eye-slash"></i> 已隐藏，不参与抽取' : '<i class="fas fa-eye"></i> 已显示');
+    }
+
+    function editModuleName(idx) {
+        const m = state.modules[idx];
+        if (!m) return;
+        const newName = prompt('修改模块名称：', m.name);
+        if (newName === null) return; // 取消
+        const trimmed = newName.trim();
+        if (!trimmed) {
+            showToast('<i class="fas fa-exclamation-circle"></i> 名称不能为空');
+            return;
+        }
+        if (trimmed === m.name) return; // 没变化
+        m.name = trimmed;
+        saveModules();
+        renderManageList();
+        showToast('已修改模块名称');
     }
     function deleteModuleConfirm(idx) {
         const m = state.modules[idx];
@@ -924,7 +1010,9 @@
             detail.innerHTML = `<div style="text-align:center;color:var(--text-secondary);font-size:13px;padding:20px;">这天没有生成记录</div>`;
             return;
         }
-        detail.innerHTML = dayEntry.sessions.map((s, sIdx) => {
+        // 最新的在最上面（倒序展示，但 sIdx 保持真实数据索引）
+        const sessionsRev = dayEntry.sessions.map((s, sIdx) => ({ s, sIdx })).reverse();
+        detail.innerHTML = sessionsRev.map(({ s, sIdx }) => {
             const timeStr = `${state.selectedDate} ${s.time}`;
             // 标签文字（所有维度都展示，按 "维度（值）" 形式）
             const tagsText = s.tags ? Object.keys(s.tags).map(k =>
@@ -990,17 +1078,26 @@
         if (noticeEl) {
             if (wasCleared) {
                 noticeEl.style.display = 'flex';
-                noticeEl.querySelector('.cc-api-notice-text').textContent = 'API Key 已过期清除（24小时安全机制），请重新填入';
+                noticeEl.querySelector('.cc-api-notice-text').textContent = 'API Key 已过期清除（2 周安全机制），请重新填入';
                 noticeEl.style.background = 'rgba(239,68,68,0.08)';
                 noticeEl.style.color = '#ef4444';
                 noticeEl.style.borderColor = 'rgba(239,68,68,0.2)';
             } else if (state.apiConfig.apikey && state.apiConfig.apikeyTimestamp) {
                 const remainMs = API_KEY_TTL_MS - (Date.now() - state.apiConfig.apikeyTimestamp);
                 if (remainMs > 0) {
-                    const hours = Math.floor(remainMs / 3600000);
+                    const days = Math.floor(remainMs / 86400000);
+                    const hours = Math.floor((remainMs % 86400000) / 3600000);
                     const mins = Math.floor((remainMs % 3600000) / 60000);
+                    let remainText;
+                    if (days >= 1) {
+                        remainText = `${days} 天 ${hours} 小时`;
+                    } else if (hours >= 1) {
+                        remainText = `${hours} 小时 ${mins} 分钟`;
+                    } else {
+                        remainText = `${mins} 分钟`;
+                    }
                     noticeEl.style.display = 'flex';
-                    noticeEl.querySelector('.cc-api-notice-text').textContent = `当前 Key 将在 ${hours} 小时 ${mins} 分钟后自动清除`;
+                    noticeEl.querySelector('.cc-api-notice-text').textContent = `当前 Key 将在 ${remainText}后自动清除`;
                     noticeEl.style.background = 'rgba(var(--accent-color-rgb), 0.08)';
                     noticeEl.style.color = 'var(--accent-color)';
                     noticeEl.style.borderColor = 'rgba(var(--accent-color-rgb), 0.2)';
@@ -1071,7 +1168,7 @@
         open, close,
         openView, openSettings, closeSettings, toggleDuration, updateDuration,
         clickGenerate, clearModule, addTag, deleteTag,
-        openManageModal, closeManageModal, addModuleFromInput, deleteModuleConfirm,
+        openManageModal, closeManageModal, addModuleFromInput, deleteModuleConfirm, editModuleName, toggleModuleVisibility,
         selectDate, changeMonth, deleteSession,
         saveApiConfig: saveApiConfigFn, clearApiConfig: clearApiConfigFn,
         closeInputModal, confirmInput,

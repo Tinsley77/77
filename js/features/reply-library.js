@@ -491,42 +491,7 @@ function _renderListContentOnly() {
     }
 
     if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
-        // 主字卡分类筛选条
-        if (!window.chuanciTexts) window.chuanciTexts = new Set();
-        const ct = window.chuanciTexts;
-        const allCount = customReplies.length;
-        const chuanciCount = customReplies.filter(t => ct.has(t)).length;
-        const manualCount = allCount - chuanciCount;
-
-        const filterBar = document.createElement('div');
-        filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
-        const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
-        const mk = (key, label, count) => {
-            const active = cf === key;
-            return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;">${label} <span style="opacity:.75;">${count}</span></button>`;
-        };
-        filterBar.innerHTML = mk('all','全部',allCount) + mk('manual','手动',manualCount) + mk('chuanci','创词',chuanciCount);
-        list.appendChild(filterBar);
-        filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
-            btn.onclick = () => {
-                window._crCategoryFilter = btn.dataset.crFilter;
-                renderReplyLibrary();
-            };
-        });
-
-        // 按分类过滤后再走原渲染
-        let crFiltered = filtered;
-        if (cf === 'manual') crFiltered = filtered.filter(t => !ct.has(t));
-        else if (cf === 'chuanci') crFiltered = filtered.filter(t => ct.has(t));
-
-        if (crFiltered.length === 0) {
-            const empty = document.createElement('div');
-            empty.innerHTML = renderEmptyState(cf === 'chuanci' ? '还没有创词生成的内容' : (cf === 'manual' ? '还没有手动添加的内容' : '列表空空如也'));
-            list.appendChild(empty.firstElementChild || empty);
-            return;
-        }
-
-        _renderCardViewWithGroups(list, crFiltered);
+        _renderCardViewWithGroups(list, filtered);
     } else {
         _renderAtmosphereList(list, filtered);
     }
@@ -610,25 +575,6 @@ function renderReplyLibrary() {
     let filtered = q ? itemsToRender.filter(item => item.toLowerCase().includes(q)) : itemsToRender;
 
     if (filtered.length === 0) {
-        // 主字卡空时也要显示 filter tabs
-        if (currentMajorTab === 'reply' && currentSubTab === 'custom' && !q) {
-            if (!window.chuanciTexts) window.chuanciTexts = new Set();
-            const filterBar = document.createElement('div');
-            filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
-            const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
-            const mk = (key, label, count) => {
-                const active = cf === key;
-                return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;font-family:var(--font-family);">${label} <span style="opacity:.75;">${count}</span></button>`;
-            };
-            filterBar.innerHTML = mk('all','全部',0) + mk('manual','手动',0) + mk('chuanci','创词',0);
-            list.appendChild(filterBar);
-            filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
-                btn.onclick = () => {
-                    window._crCategoryFilter = btn.dataset.crFilter;
-                    renderReplyLibrary();
-                };
-            });
-        }
         const empty = document.createElement('div');
         empty.innerHTML = renderEmptyState(q ? `未找到"${q}"` : '列表空空如也');
         list.appendChild(empty.firstElementChild || empty);
@@ -636,45 +582,7 @@ function renderReplyLibrary() {
     }
 
     if (_tabHasGroups()) {
-        // 主字卡分类筛选条（全部/手动/创词）
-        if (currentMajorTab === 'reply' && currentSubTab === 'custom') {
-            if (!window.chuanciTexts) window.chuanciTexts = new Set();
-            const ct = window.chuanciTexts;
-            const allCount = customReplies.length;
-            const chuanciCount = customReplies.filter(t => ct.has(t)).length;
-            const manualCount = allCount - chuanciCount;
-
-            const filterBar = document.createElement('div');
-            filterBar.style.cssText = 'display:flex;gap:8px;padding:8px 16px 4px;overflow-x:auto;';
-            const cf = (typeof window._crCategoryFilter === 'undefined') ? 'all' : window._crCategoryFilter;
-            const mk = (key, label, count) => {
-                const active = cf === key;
-                return `<button data-cr-filter="${key}" style="flex-shrink:0;padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent-color)':'var(--border-color)'};background:${active?'var(--accent-color)':'transparent'};color:${active?'#fff':'var(--text-secondary)'};font-size:12px;cursor:pointer;font-family:var(--font-family);">${label} <span style="opacity:.75;">${count}</span></button>`;
-            };
-            filterBar.innerHTML = mk('all','全部',allCount) + mk('manual','手动',manualCount) + mk('chuanci','创词',chuanciCount);
-            list.appendChild(filterBar);
-            filterBar.querySelectorAll('button[data-cr-filter]').forEach(btn => {
-                btn.onclick = () => {
-                    window._crCategoryFilter = btn.dataset.crFilter;
-                    renderReplyLibrary();
-                };
-            });
-
-            let crFiltered = filtered;
-            if (cf === 'manual') crFiltered = filtered.filter(t => !ct.has(t));
-            else if (cf === 'chuanci') crFiltered = filtered.filter(t => ct.has(t));
-
-            if (crFiltered.length === 0) {
-                const empty = document.createElement('div');
-                empty.innerHTML = renderEmptyState(cf === 'chuanci' ? '还没有创词生成的内容' : (cf === 'manual' ? '还没有手动添加的内容' : '列表空空如也'));
-                list.appendChild(empty.firstElementChild || empty);
-                return;
-            }
-
-            _renderCardViewWithGroups(list, crFiltered);
-        } else {
-            _renderCardViewWithGroups(list, filtered);
-        }
+        _renderCardViewWithGroups(list, filtered);
     } else {
         _renderAtmosphereList(list, filtered);
     }
@@ -724,10 +632,12 @@ function _renderModernToolbar() {
                 </button>
                 ${ctx.groups.map(g => {
                     const cnt = (g.items || []).filter(item => ctx.items.includes(item)).length;
+                    const icon = g.system && g.icon ? `<span style="margin-right:3px;">${g.icon}</span>` :
+                                 `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${g.color || '#aaa'};margin-right:4px;flex-shrink:0;vertical-align:middle;"></span>`;
                     return `<button class="gfp-btn ${_activeGroupFilter === g.id ? 'gfp-active' : ''} ${g.disabled ? 'gfp-disabled' : ''}"
                         data-filter="${g.id}"
                         style="${_activeGroupFilter === g.id ? `background:${g.color}22;border-color:${g.color};color:${g.color};` : ''}">
-                        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${g.color || '#aaa'};margin-right:4px;flex-shrink:0;vertical-align:middle;"></span>
+                        ${icon}
                         ${g.name} <span class="gfp-count">${cnt}</span>
                         ${g.disabled ? `<span style="font-size:9px;opacity:0.7;margin-left:2px;">${ICONS.eyeOff}</span>` : ''}
                     </button>`;
@@ -911,7 +821,21 @@ function _renderModernToolbar() {
     toolbar.querySelectorAll('.gfp-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const f = btn.dataset.filter;
-            _activeGroupFilter = f === 'all' ? null : (f === 'ungrouped' ? 'ungrouped' : parseInt(f));
+            if (f === 'all') {
+                _activeGroupFilter = null;
+            } else if (f === 'ungrouped') {
+                _activeGroupFilter = 'ungrouped';
+            } else {
+                // 优先按字符串 ID 匹配（系统分组如 sys_chuanci），失败再回退到数字索引
+                const groups = (ctx && ctx.groups) || (_getGroupCtx && _getGroupCtx().groups) || [];
+                const byId = groups.find(g => g && String(g.id) === f);
+                if (byId) {
+                    _activeGroupFilter = byId.id;
+                } else {
+                    const n = parseInt(f);
+                    _activeGroupFilter = isNaN(n) ? f : n;
+                }
+            }
             renderReplyLibrary();
         });
     });
@@ -1064,7 +988,7 @@ function _renderGroupBlock(list, group, groupItems, disabledSet, isUngrouped = f
                     color:${allSel ? '#fff' : someSel ? colorDot : 'var(--text-secondary)'};
                 ">${allSel ? '✓ 全选' : someSel ? `已选${groupItems.filter(x=>_batchSelectedIndices.has(x.idx)).length}` : '全选'}</button>`;
             })() : `<div style="flex:1;"></div>`}
-            ${!isUngrouped ? `
+            ${!isUngrouped && !group.system ? `
             <button class="grp-edit-btn" title="编辑分组" style="
                 ${_batchModeActive ? '' : 'margin-left:auto;'}width:26px;height:26px;border-radius:8px;border:1px solid var(--border-color);
                 background:var(--primary-bg);color:var(--text-secondary);cursor:pointer;
@@ -2575,14 +2499,14 @@ function _showBatchAddDialog() {
         animation:popIn 0.22s cubic-bezier(.34,1.56,.64,1);
     `;
 
-    const hasGroups = groups && groups.length > 0;
+    const hasGroups = groups && groups.filter(g => g && !g.system).length > 0;
     const groupPillsHTML = hasGroups ? `
         <button class="ba-grp-pill" data-gidx="-1" style="
             padding:5px 13px;border-radius:20px;font-size:12px;font-family:var(--font-family);cursor:pointer;
             border:1.5px solid var(--accent-color);background:var(--accent-color);color:#fff;font-weight:700;
             flex-shrink:0;transition:all .15s;
         ">不分组</button>
-        ${groups.map((g, i) => `
+        ${groups.map((g, i) => g && g.system ? '' : `
         <button class="ba-grp-pill" data-gidx="${i}" style="
             padding:5px 13px;border-radius:20px;font-size:12px;font-family:var(--font-family);cursor:pointer;
             border:1.5px solid ${g.color}44;background:${g.color}18;color:${g.color};font-weight:600;

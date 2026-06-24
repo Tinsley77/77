@@ -1,3 +1,271 @@
+// ==========================================================================
+// 图片压缩工具
+// 默认参数：最大宽度 1080px，质量 0.75
+// 仅压缩 JPEG/PNG/WebP，对 GIF / SVG 等特殊格式不动
+// ==========================================================================
+const IMG_COMPRESS_MAX_WIDTH = 1080;
+const IMG_COMPRESS_QUALITY = 0.75;
+const IMG_COMPRESS_MIN_SIZE = 50 * 1024; // 小于 50KB 不压缩（已经够小了）
+
+/**
+ * 压缩 dataURL 图片
+ * @param {string} dataURL - base64 编码的图片
+ * @param {object} opts - 可选参数 { maxWidth, quality }
+ * @returns {Promise<string>} 压缩后的 dataURL（如果无法压缩则返回原图）
+ */
+function compressImageDataURL(dataURL, opts) {
+    return new Promise((resolve) => {
+        if (!dataURL || typeof dataURL !== 'string' || dataURL.indexOf('data:image/') !== 0) {
+            return resolve(dataURL);
+        }
+        // GIF / SVG 不压（GIF 动画会变静态，SVG 是矢量没必要）
+        const mimeMatch = dataURL.match(/^data:image\/([a-zA-Z+]+);/);
+        const fmt = mimeMatch ? mimeMatch[1].toLowerCase() : '';
+        if (fmt === 'gif' || fmt === 'svg+xml' || fmt === 'svg') {
+            return resolve(dataURL);
+        }
+        // 估算原图大小（base64 长度 * 0.75 ≈ 字节）
+        const approxSize = (dataURL.length - dataURL.indexOf(',') - 1) * 0.75;
+        if (approxSize < IMG_COMPRESS_MIN_SIZE) {
+            return resolve(dataURL);
+        }
+
+        const maxWidth = (opts && opts.maxWidth) || IMG_COMPRESS_MAX_WIDTH;
+        const quality = (opts && opts.quality) || IMG_COMPRESS_QUALITY;
+
+        const img = new Image();
+        img.onload = function() {
+            try {
+                let w = img.naturalWidth, h = img.naturalHeight;
+                if (w > maxWidth) {
+                    h = Math.round(h * maxWidth / w);
+                    w = maxWidth;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return resolve(dataURL);
+                ctx.drawImage(img, 0, 0, w, h);
+
+                // 决定输出格式：PNG 转 JPEG 压得最狠，但带透明的保持 PNG
+                let outType = 'image/jpeg';
+                if (fmt === 'png' || fmt === 'webp') {
+                    // 检测是否有透明像素
+                    try {
+                        const sampleData = ctx.getImageData(0, 0, Math.min(w, 50), Math.min(h, 50)).data;
+                        for (let i = 3; i < sampleData.length; i += 4) {
+                            if (sampleData[i] < 255) { outType = 'image/png'; break; }
+                        }
+                    } catch(e) {}
+                }
+                const out = canvas.toDataURL(outType, quality);
+                // 只在压缩后变小时才采用，否则返回原图
+                resolve(out.length < dataURL.length ? out : dataURL);
+            } catch (e) {
+                resolve(dataURL);
+            }
+        };
+        img.onerror = function() { resolve(dataURL); };
+        img.src = dataURL;
+    });
+}
+
+/**
+ * 压缩 File 对象，返回压缩后的 dataURL
+ */
+function compressImageFile(file, opts) {
+    return new Promise((resolve) => {
+        if (!file) return resolve(null);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            compressImageDataURL(e.target.result, opts).then(resolve);
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+    });
+}
+
+// 兼容旧函数名：暴露在 window 方便其他模块用
+window.compressImageDataURL = compressImageDataURL;
+window.compressImageFile = compressImageFile;
+
+// ==========================================================================
+// 一键压缩历史图片：遍历所有存储找出图片字段并压缩
+// 返回 { before, after, count, errors } 的统计
+// ==========================================================================
+async function compressAllHistoricalImages(onProgress) {
+    const stats = { before: 0, after: 0, count: 0, processed: 0, errors: 0, total: 0 };
+
+    // 递归扫描对象/数组中的所有 data:image/* 字符串
+    async function scanAndCompress(obj, path) {
+        path = path || '';
+        if (obj == null) return obj;
+        if (typeof obj === 'string') {
+            if (obj.indexOf('data:image/') === 0 && obj.length > 1000) {
+                stats.before += obj.length;
+                try {
+                    const compressed = await compressImageDataURL(obj);
+                    stats.after += compressed.length;
+                    if (compressed.length < obj.length) stats.count++;
+                    stats.processed++;
+                    if (typeof onProgress === 'function') {
+                        try { onProgress(stats); } catch(e) {}
+                    }
+                    return compressed;
+                } catch(e) {
+                    stats.errors++;
+                    stats.after += obj.length;
+                    return obj;
+                }
+            }
+            return obj;
+        }
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) {
+                obj[i] = await scanAndCompress(obj[i], path + '[' + i + ']');
+            }
+            return obj;
+        }
+        if (typeof obj === 'object') {
+            for (const k of Object.keys(obj)) {
+                obj[k] = await scanAndCompress(obj[k], path + '.' + k);
+            }
+            return obj;
+        }
+        return obj;
+    }
+
+    // 先统计总图片数（提供进度估算）
+    async function countImages(obj) {
+        if (obj == null) return;
+        if (typeof obj === 'string') {
+            if (obj.indexOf('data:image/') === 0 && obj.length > 1000) stats.total++;
+            return;
+        }
+        if (Array.isArray(obj)) { for (const x of obj) await countImages(x); return; }
+        if (typeof obj === 'object') { for (const k of Object.keys(obj)) await countImages(obj[k]); }
+    }
+
+    // 1. 扫描 IndexedDB（通过 localforage）
+    if (typeof localforage !== 'undefined') {
+        try {
+            const keys = await localforage.keys();
+            // 先粗略统计总数
+            for (const key of keys) {
+                try {
+                    const val = await localforage.getItem(key);
+                    await countImages(val);
+                } catch(e) {}
+            }
+            // 实际压缩
+            for (const key of keys) {
+                try {
+                    const val = await localforage.getItem(key);
+                    if (val == null) continue;
+                    let processed;
+                    if (typeof val === 'string') {
+                        processed = await scanAndCompress(val);
+                    } else if (typeof val === 'object') {
+                        processed = await scanAndCompress(val);
+                    } else {
+                        continue;
+                    }
+                    await localforage.setItem(key, processed);
+                } catch (e) {
+                    console.warn('[ImgCompress] 处理 IndexedDB key 失败:', key, e);
+                    stats.errors++;
+                }
+            }
+        } catch (e) { console.warn('[ImgCompress] IndexedDB 扫描失败:', e); }
+    }
+
+    // 2. 扫描 localStorage
+    try {
+        const lsKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k) lsKeys.push(k);
+        }
+        for (const key of lsKeys) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw || raw.length < 1000) continue;
+                // 尝试 JSON 解析
+                let val;
+                let isJson = false;
+                try { val = JSON.parse(raw); isJson = true; } catch(e) { val = raw; }
+                await countImages(val);
+                const processed = await scanAndCompress(val);
+                if (isJson) {
+                    localStorage.setItem(key, JSON.stringify(processed));
+                } else if (typeof processed === 'string' && processed !== raw) {
+                    localStorage.setItem(key, processed);
+                }
+            } catch (e) {
+                console.warn('[ImgCompress] 处理 localStorage key 失败:', key, e);
+                stats.errors++;
+            }
+        }
+    } catch (e) { console.warn('[ImgCompress] localStorage 扫描失败:', e); }
+
+    return stats;
+}
+window.compressAllHistoricalImages = compressAllHistoricalImages;
+
+
+
+// ==========================================================================
+// 全局拦截 FileReader.readAsDataURL：所有新上传的图片自动压缩
+// 这样无需改动 14+ 个分散的图片上传入口，所有新图都会被压缩
+// ==========================================================================
+(function setupGlobalImageCompression() {
+    if (typeof FileReader === 'undefined') return;
+    if (window._imgCompressInstalled) return;
+    window._imgCompressInstalled = true;
+
+    const originalReadAsDataURL = FileReader.prototype.readAsDataURL;
+    FileReader.prototype.readAsDataURL = function(blob) {
+        // 不是图片 → 走原逻辑
+        if (!blob || !blob.type || blob.type.indexOf('image/') !== 0) {
+            return originalReadAsDataURL.call(this, blob);
+        }
+        const reader = this;
+        const tempReader = new FileReader();
+        tempReader.onload = function(e) {
+            const original = e.target.result;
+            compressImageDataURL(original).then(function(compressed) {
+                // 模拟原 FileReader 的 onload 行为
+                Object.defineProperty(reader, 'result', { value: compressed, configurable: true });
+                Object.defineProperty(reader, 'readyState', { value: 2, configurable: true });
+                if (typeof reader.onloadstart === 'function') {
+                    try { reader.onloadstart({ target: reader }); } catch(e) {}
+                }
+                if (typeof reader.onload === 'function') {
+                    try { reader.onload({ target: reader }); } catch(e) {}
+                }
+                if (typeof reader.onloadend === 'function') {
+                    try { reader.onloadend({ target: reader }); } catch(e) {}
+                }
+                try { reader.dispatchEvent(new Event('load')); } catch(e) {}
+                try { reader.dispatchEvent(new Event('loadend')); } catch(e) {}
+            }).catch(function() {
+                // 压缩失败 → 退回原图
+                Object.defineProperty(reader, 'result', { value: original, configurable: true });
+                Object.defineProperty(reader, 'readyState', { value: 2, configurable: true });
+                if (typeof reader.onload === 'function') try { reader.onload({ target: reader }); } catch(e) {}
+                if (typeof reader.onloadend === 'function') try { reader.onloadend({ target: reader }); } catch(e) {}
+            });
+        };
+        tempReader.onerror = function(e) {
+            if (typeof reader.onerror === 'function') try { reader.onerror(e); } catch(err) {}
+            if (typeof reader.onloadend === 'function') try { reader.onloadend(e); } catch(err) {}
+        };
+        originalReadAsDataURL.call(tempReader, blob);
+    };
+})();
+
+
+
         function safeGetItem(key) {
             try { return localStorage.getItem(key); }
             catch (e) { console.error('Error getting item:', e); return null; }
@@ -376,27 +644,137 @@ function applyGlobalThemeCss(cssCode) {
     styleTag.textContent = cssCode;
 }
 
+// 显示模块选择面板（滑块），返回 Promise<flags|null>
+async function _showExportModuleSelector() {
+    const modules = [
+        { flag: 'inclMsgs',     icon: '💬', label: '聊天记录' },
+        { flag: 'inclSet',      icon: '⚙️', label: '聊天设置' },
+        { flag: 'inclCustom',   icon: '📚', label: '回复库 / 字卡' },
+        { flag: 'inclStickers', icon: '🌸', label: '表情贴纸' },
+        { flag: 'inclThemes',   icon: '🎨', label: '主题 / 外观' },
+        { flag: 'inclAnn',      icon: '📅', label: '纪念日' },
+        { flag: 'inclDg',       icon: '🔮', label: '占卜 / 运势 / 天气' },
+        { flag: 'inclMood',     icon: '💭', label: '心情手账' },
+        { flag: 'inclEnvelope', icon: '✉️', label: '信封投递' },
+        { flag: 'inclChuanci',  icon: '✨', label: '创词（含模块/标签/历史，不含 API Key）' }
+    ];
+
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.6);
+            backdrop-filter:blur(10px);display:flex;align-items:flex-end;justify-content:center;
+        `;
+
+        const rows = modules.map(m => `
+            <div class="bk-row" data-flag="${m.flag}" style="
+                display:flex;align-items:center;justify-content:space-between;gap:12px;
+                padding:14px 14px;border:1.5px solid var(--border-color);border-radius:14px;
+                background:var(--primary-bg);
+            ">
+                <span style="font-size:14px;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:18px;">${m.icon}</span>${m.label}
+                </span>
+                <div class="bk-switch on" data-target="${m.flag}" style="
+                    width:44px;height:24px;border-radius:12px;background:var(--accent-color);
+                    position:relative;cursor:pointer;transition:background 0.2s;flex-shrink:0;
+                ">
+                    <div class="bk-switch-knob" style="
+                        position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;
+                        top:2px;left:22px;transition:transform 0.2s, left 0.2s;
+                        box-shadow:0 1px 4px rgba(0,0,0,0.2);
+                    "></div>
+                </div>
+            </div>
+        `).join('');
+
+        overlay.innerHTML = `
+            <div style="
+                width:100%;max-width:560px;background:var(--secondary-bg);border-radius:24px 24px 0 0;
+                box-shadow:0 -10px 60px rgba(0,0,0,0.3);
+                padding:16px 18px env(safe-area-inset-bottom,16px);
+                animation:bkSlideUp .3s cubic-bezier(.34,1.56,.64,1);
+            ">
+                <div style="width:36px;height:4px;border-radius:2px;background:var(--border-color);margin:0 auto 14px;"></div>
+                <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">选择要备份的内容</div>
+                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">默认全部开启，关闭后该模块不会写入备份文件</div>
+                <div style="display:flex;flex-direction:column;gap:10px;max-height:55vh;overflow:auto;padding-right:4px;">
+                    ${rows}
+                </div>
+                <div style="display:flex;gap:10px;margin-top:16px;">
+                    <button id="bk-export-cancel" style="
+                        flex:1;padding:13px;border-radius:14px;border:none;
+                        background:var(--message-received-bg);color:var(--text-primary);
+                        font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+                    ">取消</button>
+                    <button id="bk-export-confirm" style="
+                        flex:2;padding:13px;border-radius:14px;border:none;
+                        background:var(--accent-color);color:#fff;
+                        font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;
+                    ">导出备份</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        // 滑块切换
+        overlay.querySelectorAll('.bk-switch').forEach(sw => {
+            sw.addEventListener('click', () => {
+                const on = !sw.classList.contains('on');
+                sw.classList.toggle('on', on);
+                sw.style.background = on ? 'var(--accent-color)' : 'var(--message-received-bg)';
+                const knob = sw.querySelector('.bk-switch-knob');
+                if (knob) knob.style.left = on ? '22px' : '2px';
+            });
+        });
+
+        const cleanup = () => overlay.remove();
+        overlay.querySelector('#bk-export-cancel').addEventListener('click', () => { cleanup(); resolve(null); });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) { cleanup(); resolve(null); } });
+        overlay.querySelector('#bk-export-confirm').addEventListener('click', () => {
+            const flags = {};
+            overlay.querySelectorAll('.bk-switch').forEach(sw => {
+                flags[sw.dataset.target] = sw.classList.contains('on');
+            });
+            cleanup();
+            resolve(flags);
+        });
+    });
+}
+
 async function exportAllData() {
     try {
-        if (typeof ChatBackup !== 'undefined' && ChatBackup.buildBackupPayload && ChatBackup.serializeBackupV4) {
-            const payload = await ChatBackup.buildBackupPayload({
-                inclMsgs: true,
-                inclSet: true,
-                inclCustom: true,
-                inclAnn: true,
-                inclThemes: true,
-                inclDg: true,
-                inclStickers: true
-            });
-            const jsonString = ChatBackup.serializeBackupV4(payload);
-            const dateStr = new Date().toISOString().slice(0, 10);
-            const fileName = `chatapp-backup-${dateStr}.json`;
-            const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
-            downloadFileFallback(blob, fileName);
-            if (typeof showNotification === 'function') showNotification('已导出 JSON 备份', 'success');
-        } else {
+        if (typeof ChatBackup === 'undefined' || !ChatBackup.buildBackupPayload || !ChatBackup.serializeBackupV4) {
             showNotification('备份模块或函数未加载，请刷新页面', 'error');
+            return;
         }
+
+        // 先让用户用滑块选择要备份的模块
+        const flags = await _showExportModuleSelector();
+        if (!flags) return; // 用户取消
+
+        // 至少要选一个
+        const anyOn = Object.keys(flags).some(k => flags[k]);
+        if (!anyOn) {
+            showNotification('请至少选择一个模块进行备份', 'warning');
+            return;
+        }
+
+        if (typeof showNotification === 'function') showNotification('正在打包备份…', 'info', 3000);
+
+        // 直接走 exportBackupToFile（带 ZIP 优化），它内部会处理下载
+        if (ChatBackup.exportBackupToFile) {
+            await ChatBackup.exportBackupToFile(flags);
+            return;
+        }
+        // fallback: 纯 JSON
+        const payload = await ChatBackup.buildBackupPayload(flags);
+        const jsonString = ChatBackup.serializeBackupV4(payload);
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const fileName = `chatapp-backup-${dateStr}.json`;
+        const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+        downloadFileFallback(blob, fileName);
+        if (typeof showNotification === 'function') showNotification('已导出 JSON 备份', 'success');
     } catch (e) {
         console.error('全量导出失败:', e);
         showNotification('全量导出失败，请重试', 'error');
@@ -431,47 +809,66 @@ async function importAllData(file) {
 
         const categories = [
             {
-                id: 'chat',
-                label: '聊天记录 / 会话 / 红包',
-                indexedDBNeedles: ['chatMessages', 'sessionList', 'chatSettings', 'showPartnerNameInChat', 'envelopeData', 'pending_envelope'],
+                id: 'msgs',
+                label: '💬 聊天记录',
+                indexedDBNeedles: ['chatMessages', 'sessionList'],
+                localStorageNeedles: []
+            },
+            {
+                id: 'set',
+                label: '⚙️ 聊天设置',
+                indexedDBNeedles: ['chatSettings', 'showPartnerNameInChat', 'partnerPersonas'],
                 localStorageNeedles: ['groupChatSettings']
             },
             {
                 id: 'replies',
-                label: '回复 / 拍一拍 / 氛围',
-                indexedDBNeedles: ['customReplies', 'customPokes', 'customStatuses', 'customMottos', 'customIntros', 'customEmojis', 'customReplyGroups', 'customPokeGroups', 'customStatusGroups'],
+                label: '📚 回复库 / 字卡',
+                indexedDBNeedles: ['customReplies', 'customPokes', 'customStatuses', 'customMottos', 'customIntros', 'customEmojis', 'customReplyGroups', 'customPokeGroups', 'customStatusGroups', 'chuanciTexts'],
                 localStorageNeedles: ['disabledReplyItems', 'pokeSym_my', 'pokeSym_partner', 'pokeSym_my_custom', 'pokeSym_partner_custom']
             },
             {
                 id: 'stickers',
-                label: '表情库（贴纸）',
+                label: '🌸 表情贴纸',
                 indexedDBNeedles: ['stickerLibrary', 'myStickerLibrary'],
                 localStorageNeedles: ['disabledStickerItems']
             },
             {
+                id: 'themes',
+                label: '🎨 主题 / 外观',
+                indexedDBNeedles: ['customThemes', 'themeSchemes', 'backgroundGallery', 'chatBackground', 'partnerAvatar', 'myAvatar'],
+                localStorageNeedles: []
+            },
+            {
                 id: 'ann',
-                label: '纪念日',
+                label: '📅 纪念日',
                 indexedDBNeedles: ['anniversaries'],
                 localStorageNeedles: []
             },
             {
+                id: 'dg',
+                label: '🔮 占卜 / 运势 / 天气',
+                indexedDBNeedles: [],
+                localStorageNeedles: ['dg_custom_data', 'dg_status_pool', 'weekly_fortune', 'daily_fortune'],
+                localStoragePrefixes: ['customWeather_']
+            },
+            {
                 id: 'mood',
-                label: '心晴手账',
+                label: '💭 心情手账',
                 indexedDBNeedles: ['moodCalendar', 'customMoodOptions', 'moodTrash'],
                 localStorageNeedles: []
             },
             {
-                id: 'themes',
-                label: '主题 / 外观 / 图库',
-                indexedDBNeedles: ['customThemes', 'themeSchemes', 'backgroundGallery', 'chatBackground', 'partnerAvatar', 'myAvatar', 'partnerPersonas'],
+                id: 'envelope',
+                label: '✉️ 信封投递',
+                indexedDBNeedles: ['envelopeData', 'pending_envelope'],
                 localStorageNeedles: []
             },
             {
-                id: 'dg',
-                label: '每日公告 / 运势 / 天气',
+                id: 'chuanci',
+                label: '✨ 创词',
                 indexedDBNeedles: [],
-                localStorageNeedles: ['dg_custom_data', 'dg_status_pool', 'weekly_fortune', 'daily_fortune'],
-                localStoragePrefixes: ['customWeather_']
+                localStorageNeedles: [],
+                localStoragePrefixes: ['cc_']
             }
         ];
 

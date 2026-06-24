@@ -182,10 +182,12 @@
         if (!flags.inclThemes) p.push('backgroundGallery', 'chatBackground', 'partnerAvatar', 'myAvatar', 'playerCover');
         if (!flags.inclMsgs) p.push('chatMessages');
         if (!flags.inclSet) p.push('chatSettings', 'partnerPersonas', 'showPartnerNameInChat');
-        if (!flags.inclCustom) p.push('customReplies', 'customPokes', 'customStatuses', 'customMottos', 'customIntros', 'customEmojis', 'customReplyGroups', 'customPokeGroups', 'customStatusGroups');
+        if (!flags.inclCustom) p.push('customReplies', 'customPokes', 'customStatuses', 'customMottos', 'customIntros', 'customEmojis', 'customReplyGroups', 'customPokeGroups', 'customStatusGroups', 'chuanciTexts');
         if (!flags.inclAnn) p.push('anniversaries');
         if (!flags.inclThemes) p.push('customThemes', 'themeSchemes');
         if (!flags.inclDg) p.push('dg_custom_data', 'dg_status_pool', 'weekly_fortune', 'daily_fortune', 'customWeather_');
+        if (!flags.inclMood) p.push('moodCalendar');
+        if (!flags.inclEnvelope) p.push('envelopeData', 'pending_envelope');
         return p;
     }
 
@@ -203,7 +205,8 @@
     async function buildBackupPayload(flags) {
         flags = flags || {
             inclMsgs: true, inclSet: true, inclCustom: true, inclAnn: true,
-            inclThemes: true, inclDg: true, inclStickers: false
+            inclThemes: true, inclDg: true, inclStickers: true,
+            inclMood: true, inclEnvelope: true, inclChuanci: true
         };
         var lfData = {};
         var keys = await localforage.keys();
@@ -219,7 +222,28 @@
         var lsData = {};
         for (var j = 0; j < localStorage.length; j++) {
             var lk = localStorage.key(j);
-            if (!lk || shouldSkipKeyGroupChat(lk, flags)) continue;
+            if (!lk) continue;
+            // 创词模块（cc_ 开头）按 inclChuanci 控制
+            if (lk.indexOf('cc_') === 0) {
+                if (!flags.inclChuanci) continue;
+                try {
+                    var rawCC = localStorage.getItem(lk);
+                    // 特殊处理：cc_api_config 里的 apikey 和 apikeyTimestamp 不写入备份
+                    if (lk === 'cc_api_config' && rawCC) {
+                        try {
+                            var parsed = JSON.parse(rawCC);
+                            if (parsed && typeof parsed === 'object') {
+                                parsed.apikey = '';
+                                parsed.apikeyTimestamp = 0;
+                                rawCC = JSON.stringify(parsed);
+                            }
+                        } catch (eParseCC) {}
+                    }
+                    lsData[lk] = rawCC;
+                } catch (eCC) {}
+                continue;
+            }
+            if (shouldSkipKeyGroupChat(lk, flags)) continue;
             try {
                 lsData[lk] = localStorage.getItem(lk);
             } catch (e2) {}
