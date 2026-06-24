@@ -11398,6 +11398,13 @@
 #chuanci-modal #cc-view-api > .cc-header {
     margin: 0; /* history/api 没有左右 padding */
 }
+#chuanci-modal #cc-view-api .cc-api-form {
+    padding: 16px;
+    /* 在 API 视图里不再做内部滚动（外层 #cc-view-api 已是滚动容器）
+       否则双层滚动会导致底部"提交/清除"按钮被屏幕外的 90px padding 挤出 */
+    overflow: visible;
+    flex: none;
+}
 #chuanci-modal #cc-view-history,
 #chuanci-modal #cc-view-api {
     padding-bottom: 90px;
