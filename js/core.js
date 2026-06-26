@@ -1687,21 +1687,6 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 return;
             }
 
-            // ── 对方申请追加字卡（10% 概率，总是触发，没 Key 时允许后会提示失败）──
-            if (typeof window.Chuanci !== 'undefined' &&
-                typeof window.Chuanci.showPartnerRequestModal === 'function' &&
-                Math.random() < 0.10) {
-                try {
-                    window.Chuanci.showPartnerRequestModal({
-                        partnerName: (settings && settings.partnerName) || '对方',
-                        partnerAvatar: (DOMElements.partner.avatar && DOMElements.partner.avatar.src) || '',
-                        myName: (settings && settings.myName) || '我',
-                        myAvatar: (DOMElements.user && DOMElements.user.avatar && DOMElements.user.avatar.src) || ''
-                    });
-                } catch(e) { console.warn('[Chuanci] 申请字卡触发失败:', e); }
-                return;
-            }
-
 
             // ── 造词库清理检查 ──
             if (typeof _maybeCleanWordBank === 'function') _maybeCleanWordBank();

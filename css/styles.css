@@ -11355,9 +11355,7 @@
 
 #chuanci-modal .cc-view { display: none; flex: 1; flex-direction: column; overflow: hidden; min-height: 0; }
 #chuanci-modal .cc-view.active { display: flex; }
-#chuanci-modal .cc-view#cc-view-history,
-#chuanci-modal .cc-view#cc-view-edit,
-#chuanci-modal .cc-view#cc-view-api { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 编辑/历史/API 视图的滚动现在交给内部容器处理（见下方专属规则），不在 cc-view 上 */
 
 .cc-toast {
     position: fixed;
@@ -11383,31 +11381,57 @@
     transform: translateX(-50%) translateY(0);
 }
 
-#chuanci-modal #cc-view-edit { padding: 0 16px; }
-#chuanci-modal #cc-view-edit > #cc-edit-modules { padding: 16px 0 90px; }
+/* 编辑/历史/API 视图统一布局：
+   外层 cc-view 是 flex column，header 是固定高度的 flex-shrink:0 兄弟元素，
+   下面一个滚动容器吃满剩余空间。这样不用 sticky 也不会被遮挡。 */
+#chuanci-modal .cc-view#cc-view-edit,
+#chuanci-modal .cc-view#cc-view-history,
+#chuanci-modal .cc-view#cc-view-api {
+    overflow: hidden; /* 由内部滚动容器接管滚动 */
+}
 #chuanci-modal #cc-view-edit > .cc-header,
 #chuanci-modal #cc-view-history > .cc-header,
 #chuanci-modal #cc-view-api > .cc-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    flex-shrink: 0;
     background: var(--secondary-bg);
-    margin: 0 -16px; /* 让 sticky header 占满左右两侧，因为容器有 padding */
+    z-index: 5;
 }
-#chuanci-modal #cc-view-history > .cc-header,
-#chuanci-modal #cc-view-api > .cc-header {
-    margin: 0; /* history/api 没有左右 padding */
+/* 编辑视图的内容容器 */
+#chuanci-modal #cc-view-edit > #cc-edit-modules {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 16px 90px;
+    min-height: 0;
+}
+/* 历史视图的 body */
+#chuanci-modal #cc-view-history > #cc-calendar,
+#chuanci-modal #cc-view-history > #cc-day-detail {
+    flex-shrink: 0;
+}
+/* 历史视图用第一个非 header 元素之后的整体作为滚动区域 */
+#chuanci-modal #cc-view-history {
+    display: flex;
+    flex-direction: column;
+}
+#chuanci-modal #cc-view-history > .cc-history-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 90px;
+    min-height: 0;
+}
+/* API 视图的 body */
+#chuanci-modal #cc-view-api {
+    display: flex;
+    flex-direction: column;
 }
 #chuanci-modal #cc-view-api .cc-api-form {
-    padding: 16px;
-    /* 在 API 视图里不再做内部滚动（外层 #cc-view-api 已是滚动容器）
-       否则双层滚动会导致底部"提交/清除"按钮被屏幕外的 90px padding 挤出 */
-    overflow: visible;
-    flex: none;
-}
-#chuanci-modal #cc-view-history,
-#chuanci-modal #cc-view-api {
-    padding-bottom: 90px;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 16px 90px;
+    min-height: 0;
 }
 
 /* 创词 - 历史详情卡片新样式 */

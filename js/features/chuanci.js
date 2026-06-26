@@ -248,7 +248,16 @@
     // 主项目调用：弹出"对方申请追加字卡"弹窗
     // 参数：{ partnerName, partnerAvatar, myName, myAvatar }
     function showPartnerRequestModal(opts) {
-        // 不再做 Key 检查，允许后会再检查并失败提示
+        // 关键：弹窗触发时，用户可能从未打开过创词模块，apiConfig 还没从 localStorage 读出
+        // 所以这里先确保数据已加载，否则后续"允许"按钮会误判 Key 未填
+        if (!_initialized) {
+            loadData();
+            clearExpiredKeyIfNeeded();
+            startQueueChecker();
+            startPartnerRequestScheduler();
+            _initialized = true;
+        }
+
         const modal = document.getElementById('cc-partner-request-modal');
         if (!modal) return;
 
@@ -331,6 +340,14 @@
 
     // 对方申请通过后，按用户当前的"时长开关"决定即时还是延迟
     async function triggerPartnerGeneration() {
+        // 双重保险：再确保数据已加载（用户可能从未打开过创词模块）
+        if (!_initialized) {
+            loadData();
+            clearExpiredKeyIfNeeded();
+            startQueueChecker();
+            startPartnerRequestScheduler();
+            _initialized = true;
+        }
         // 先检查能不能生成，失败就用拒绝样式系统消息提示原因
         clearExpiredKeyIfNeeded();
         const cfg = state.apiConfig;
@@ -418,6 +435,39 @@
             if (state.currentView === 'home') renderPendingInfo();
         }, 1000);
         checkQueue();
+    }
+
+    // ===== 对方申请追加字卡：独立定时器 =====
+    // 每 15-60 分钟检查一次，10% 概率弹申请字卡弹窗
+    let _partnerRequestTimer = null;
+    function startPartnerRequestScheduler() {
+        if (_partnerRequestTimer) clearTimeout(_partnerRequestTimer);
+        // 随机 15-60 分钟
+        const intervalMs = (15 + Math.random() * 45) * 60 * 1000;
+        _partnerRequestTimer = setTimeout(() => {
+            try {
+                // 10% 概率触发
+                if (Math.random() < 0.10) {
+                    // 检查弹窗是否已显示（避免重复）
+                    const modal = document.getElementById('cc-partner-request-modal');
+                    const alreadyOpen = modal && modal.classList.contains('open');
+                    // 检查页面是否可见（页面不可见时不弹，避免被切到后台时反复触发但用户看不到）
+                    const pageVisible = !document.hidden;
+                    if (!alreadyOpen && pageVisible &&
+                        typeof window !== 'undefined' &&
+                        typeof window.settings !== 'undefined') {
+                        showPartnerRequestModal({
+                            partnerName: (window.settings && window.settings.partnerName) || '对方',
+                            partnerAvatar: (window.DOMElements && window.DOMElements.partner && window.DOMElements.partner.avatar && window.DOMElements.partner.avatar.src) || '',
+                            myName: (window.settings && window.settings.myName) || '我',
+                            myAvatar: (window.DOMElements && window.DOMElements.user && window.DOMElements.user.avatar && window.DOMElements.user.avatar.src) || ''
+                        });
+                    }
+                }
+            } catch(e) { console.warn('[Chuanci] 定时申请字卡失败:', e); }
+            // 无论是否触发都要重新排程
+            startPartnerRequestScheduler();
+        }, intervalMs);
     }
 
     async function checkQueue() {
@@ -1147,6 +1197,7 @@
             loadData();
             clearExpiredKeyIfNeeded();
             startQueueChecker();
+            startPartnerRequestScheduler();
             _initialized = true;
         } else {
             // 每次打开都重新检查 Key 过期
