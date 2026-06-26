@@ -11404,16 +11404,7 @@
     padding: 16px 16px 90px;
     min-height: 0;
 }
-/* 历史视图的 body */
-#chuanci-modal #cc-view-history > #cc-calendar,
-#chuanci-modal #cc-view-history > #cc-day-detail {
-    flex-shrink: 0;
-}
-/* 历史视图用第一个非 header 元素之后的整体作为滚动区域 */
-#chuanci-modal #cc-view-history {
-    display: flex;
-    flex-direction: column;
-}
+/* 历史视图的滚动容器 */
 #chuanci-modal #cc-view-history > .cc-history-scroll {
     flex: 1;
     overflow-y: auto;
@@ -11421,11 +11412,7 @@
     padding-bottom: 90px;
     min-height: 0;
 }
-/* API 视图的 body */
-#chuanci-modal #cc-view-api {
-    display: flex;
-    flex-direction: column;
-}
+/* API 视图的滚动表单 */
 #chuanci-modal #cc-view-api .cc-api-form {
     flex: 1;
     overflow-y: auto;
