@@ -275,9 +275,13 @@ function checkPartnerDailyMood() {
 function saveMoodData() {
     localforage.setItem(getStorageKey('moodCalendar'), moodData);
     window.moodData = moodData;
+    // 心情模态框存在就重新渲染日历（不再检查可见性，因为状态判断在某些情况下不准）
+    // 用 requestAnimationFrame 让浮层关闭动画先完成，再触发重渲，避免被中间状态打断
     var moodModal = document.getElementById('mood-modal');
-    if (moodModal && !moodModal.classList.contains('hidden') && moodModal.style.display !== 'none') {
-        renderMoodCalendar();
+    if (moodModal) {
+        requestAnimationFrame(() => {
+            try { renderMoodCalendar(); } catch(e) { console.warn('[Mood] 渲染失败:', e); }
+        });
     }
 }
 function saveCustomMoodOptions() {

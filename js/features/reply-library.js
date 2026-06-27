@@ -192,6 +192,7 @@ function renderWordBankTab(container) {
     selBar.style.cssText = 'display:none;align-items:center;gap:8px;padding:6px 16px 8px;flex-wrap:wrap;';
     selBar.innerHTML = `
         <button id="wb-sel-all" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb,180,140,100),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">全选 (${displayList.length})</button>
+        <button id="wb-sel-tomain" style="padding:4px 12px;border-radius:20px;border:1px solid var(--accent-color);background:rgba(var(--accent-color-rgb,180,140,100),0.1);color:var(--accent-color);font-size:12px;cursor:pointer;">→ 主字卡</button>
         <button id="wb-sel-del" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">删除所选</button>
         <button id="wb-sel-exit" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);font-size:12px;cursor:pointer;">取消</button>
         <span id="wb-sel-count" style="font-size:12px;color:var(--text-secondary);margin-left:4px;">已选 0 条</span>
@@ -253,6 +254,42 @@ function renderWordBankTab(container) {
         indices.forEach(i => window.wordBank.splice(i, 1));
         await saveWordBank();
         renderReplyLibrary();
+    };
+
+    selBar.querySelector('#wb-sel-tomain').onclick = async () => {
+        if (!selected.size) return;
+        // 取出选中的造词库文本（按索引升序拿文本）
+        const indicesAsc = [...selected].sort((a, b) => a - b);
+        const texts = indicesAsc.map(i => _wbGetText(window.wordBank[i])).filter(Boolean);
+        if (texts.length === 0) return;
+
+        // 检查 customReplies 是否可用
+        if (typeof customReplies === 'undefined' || !Array.isArray(customReplies)) {
+            showNotification('主字卡数据未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+
+        let added = 0, skipped = 0;
+        texts.forEach(t => {
+            const val = String(t || '').trim();
+            if (!val) return;
+            if (customReplies.indexOf(val) === -1) {
+                customReplies.push(val);
+                added++;
+            } else {
+                skipped++;
+            }
+        });
+
+        // 从造词库里删除（按倒序删避免索引错位）
+        const indicesDesc = [...selected].sort((a, b) => b - a);
+        indicesDesc.forEach(i => window.wordBank.splice(i, 1));
+        await saveWordBank();
+
+        if (typeof throttledSaveData === 'function') throttledSaveData();
+        toggleSelectMode(false);
+        renderReplyLibrary();
+        showNotification(`√ 已移动 ${added} 条到主字卡${skipped ? `，跳过 ${skipped} 条重复` : ''}`, 'success');
     };
 
     // 列表
@@ -679,8 +716,8 @@ function _renderModernToolbar() {
                 <button id="batch-delete-btn" class="batch-act-pill batch-act-danger ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="删除">
                     ${ICONS.trash} 删除
                 </button>
-                <button id="batch-to-wordbank-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="添加至造词库" style="background:rgba(var(--accent-color-rgb,180,140,100),0.1);border-color:var(--accent-color);color:var(--accent-color);">
-                    + 造词库
+                <button id="batch-to-wordbank-btn" class="batch-act-pill ${selectedCount === 0 ? 'batch-act-disabled' : ''}" data-tip="移动至造词库" style="background:rgba(var(--accent-color-rgb,180,140,100),0.1);border-color:var(--accent-color);color:var(--accent-color);">
+                    → 造词库
                 </button>
             </div>
         `;
@@ -897,11 +934,28 @@ function _renderModernToolbar() {
             const indices = [..._batchSelectedIndices].sort((a, b) => a - b);
             const texts = indices.map(i => customReplies[i]).filter(Boolean);
             let added = 0, skipped = 0;
+            // 先推入造词库
             texts.forEach(t => { if (_pushToWordBank(t)) added++; else skipped++; });
             await saveWordBank();
+
+            // 然后从主字卡里删除这些条目（按倒序删，避免索引错位）
+            const indicesDesc = [..._batchSelectedIndices].sort((a, b) => b - a);
+            indicesDesc.forEach(i => {
+                const deletedText = customReplies[i];
+                customReplies.splice(i, 1);
+                // 同步清理 chuanciTexts 标记
+                if (window.chuanciTexts && deletedText) window.chuanciTexts.delete(deletedText);
+                // 从所有分组里移除引用
+                const ctx = _getGroupCtx();
+                if (ctx && ctx.groups) {
+                    ctx.groups.forEach(g => { if (g.items) g.items = g.items.filter(t => t !== deletedText); });
+                }
+            });
+            if (typeof throttledSaveData === 'function') throttledSaveData();
+
             _batchSelectedIndices.clear();
             renderReplyLibrary();
-            showNotification(`√ 添加 ${added} 条，跳过 ${skipped} 条重复`, 'success');
+            showNotification(`√ 已移动 ${added} 条到造词库${skipped ? `，跳过 ${skipped} 条重复` : ''}`, 'success');
         });
     }
 }
@@ -920,7 +974,7 @@ function _renderCardViewWithGroups(list, items) {
 
     if (_activeGroupFilter === null) {
         if (!groups || groups.length === 0) {
-            _renderCardList(list, itemsWithIdx, disabledSet);
+            _renderCardList(list, itemsWithIdx, disabledSet, '__all');
             return;
         }
 
@@ -947,7 +1001,7 @@ function _renderCardViewWithGroups(list, items) {
         if (ungrouped.length === 0) {
             list.innerHTML = renderEmptyState('所有内容均已分组');
         } else {
-            _renderCardList(list, ungrouped, disabledSet);
+            _renderCardList(list, ungrouped, disabledSet, '__filter_ungrouped');
         }
     } else {
         const g = groups.find(g => g.id === _activeGroupFilter);
@@ -956,7 +1010,7 @@ function _renderCardViewWithGroups(list, items) {
         if (filtered.length === 0) {
             list.innerHTML = renderEmptyState('此分组暂无内容');
         } else {
-            _renderCardList(list, filtered, disabledSet);
+            _renderCardList(list, filtered, disabledSet, '__filter_' + _activeGroupFilter);
         }
     }
 }
@@ -1007,7 +1061,7 @@ function _renderGroupBlock(list, group, groupItems, disabledSet, isUngrouped = f
     if (groupItems.length === 0) {
         body.innerHTML = `<div style="padding:18px;text-align:center;font-size:12px;color:var(--text-secondary);opacity:0.6;">此分组暂无内容</div>`;
     } else {
-        _renderCardList(body, groupItems, disabledSet);
+        _renderCardList(body, groupItems, disabledSet, 'grp_' + group.id);
     }
 
     section.querySelector('.grp-select-all-btn')?.addEventListener('click', e => {
@@ -1049,10 +1103,17 @@ function _renderGroupBlock(list, group, groupItems, disabledSet, isUngrouped = f
 }
 
 const _CARD_PAGE_SIZE = 80; // 每次最多渲染 80 张，超过时追加"显示更多"
+// 用户已经展开了"显示剩余 N 条"的容器跟踪（按容器在分组中的位置或 ID）
+// 因为 _renderCardList 不接收分组上下文，我们用 WeakSet + 容器元素来跟踪
+// 但容器在每次 render 时都是新的——所以用一个全局键值集合，按 group id 跟踪
+let _expandedGroupIds = new Set();
 
-function _renderCardList(container, itemsWithIdx, disabledSet) {
+function _renderCardList(container, itemsWithIdx, disabledSet, expandKey) {
     const total = itemsWithIdx.length;
-    const toRender = itemsWithIdx.slice(0, _CARD_PAGE_SIZE);
+    // 如果当前分组已经被展开过，直接渲染所有，不折叠
+    const alreadyExpanded = expandKey && _expandedGroupIds.has(expandKey);
+    const pageSize = alreadyExpanded ? total : _CARD_PAGE_SIZE;
+    const toRender = itemsWithIdx.slice(0, pageSize);
     const remaining = total - toRender.length;
 
     const frag = document.createDocumentFragment();
@@ -1066,6 +1127,8 @@ function _renderCardList(container, itemsWithIdx, disabledSet) {
         btn.textContent = `显示剩余 ${remaining} 条`;
         btn.onclick = () => {
             btn.remove();
+            // 标记此分组为已展开，后续重渲会保持
+            if (expandKey) _expandedGroupIds.add(expandKey);
             const moreFrag = document.createDocumentFragment();
             itemsWithIdx.slice(_CARD_PAGE_SIZE).forEach(({ text, idx }) => {
                 moreFrag.appendChild(_createCard(text, idx, disabledSet));
@@ -1191,8 +1254,8 @@ function _renderAtmosphereList(list, items) {
                 <button class="reply-action-mini delete-btn" title="删除">${ICONS.trash}</button>
             </div>
         `;
-        div.querySelector('.delete-btn').onclick = () => deleteItem(realIdx);
-        div.querySelector('.edit-btn').onclick = () => editItem(realIdx, item);
+        div.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteItem(realIdx); };
+        div.querySelector('.edit-btn').onclick = (e) => { e.stopPropagation(); editItem(realIdx, item); };
         frag.appendChild(div);
     });
     list.appendChild(frag);
