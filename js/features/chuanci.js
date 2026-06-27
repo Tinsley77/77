@@ -601,7 +601,7 @@
             const v = selectedTags[k];
             if (v && v !== '无') tagLines.push(`${k}：${v}`);
         });
-        const userPrompt = `${tagLines.length ? tagLines.join('\n') : '（无具体标签限制）'}`;
+        const userPrompt = `请基于以下标签生成 3 段内容，每段独立一行，不加序号、不加解释、不加引号。\n\n${tagLines.length ? tagLines.join('\n') : '（无具体标签限制）'}`;
 
         const systemPrompt = cfg.persona || '';
         const url = cfg.baseurl.trim();

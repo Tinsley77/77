@@ -273,11 +273,17 @@ function checkPartnerDailyMood() {
     }
 }
 function saveMoodData() {
-    localforage.setItem(getStorageKey('moodCalendar'), moodData);
+    localforage.setItem(getStorageKey('moodCalendar'), moodData).catch(err => {
+        console.error('[Mood] 写入失败：', err);
+    });
     window.moodData = moodData;
+    // 心情模态框存在就重新渲染日历（不再检查可见性，因为状态判断在某些情况下不准）
+    // 用 requestAnimationFrame 让浮层关闭动画先完成，再触发重渲，避免被中间状态打断
     var moodModal = document.getElementById('mood-modal');
-    if (moodModal && !moodModal.classList.contains('hidden') && moodModal.style.display !== 'none') {
-        renderMoodCalendar();
+    if (moodModal) {
+        requestAnimationFrame(() => {
+            try { renderMoodCalendar(); } catch(e) { console.warn('[Mood] 渲染失败:', e); }
+        });
     }
 }
 function saveCustomMoodOptions() {
@@ -354,22 +360,25 @@ function renderMoodCalendar() {
         
         if (dayData) {
             if (dayData.user) {
-                const moodObj = getAllMoodOptions().find(m => m.key === dayData.user);
-                if (moodObj) {
-                    stats.me.counts[moodObj.key] = (stats.me.counts[moodObj.key] || 0) + 1;
-                    stats.me.total++;
-                    const dot = createMoodDot(moodObj, dayData.note, false);
-                    dotsContainer.appendChild(dot);
+                let moodObj = getAllMoodOptions().find(m => m.key === dayData.user);
+                if (!moodObj) {
+                    // 兜底：找不到匹配的心情选项时，构造一个虚拟对象，保证统计和日历点都正常
+                    moodObj = { key: dayData.user, label: dayData.user, kaomoji: '😊', color: 'var(--accent-color)' };
                 }
+                stats.me.counts[moodObj.key] = (stats.me.counts[moodObj.key] || 0) + 1;
+                stats.me.total++;
+                const dot = createMoodDot(moodObj, dayData.note, false);
+                dotsContainer.appendChild(dot);
             }
             if (dayData.partner) {
-                const moodObj = getAllMoodOptions().find(m => m.key === dayData.partner);
-                if (moodObj) {
-                    stats.partner.counts[moodObj.key] = (stats.partner.counts[moodObj.key] || 0) + 1;
-                    stats.partner.total++;
-                    const dot = createMoodDot(moodObj, dayData.partnerNote, true); 
-                    dotsContainer.appendChild(dot);
+                let moodObj = getAllMoodOptions().find(m => m.key === dayData.partner);
+                if (!moodObj) {
+                    moodObj = { key: dayData.partner, label: dayData.partner, kaomoji: '😊', color: 'var(--accent-color)' };
                 }
+                stats.partner.counts[moodObj.key] = (stats.partner.counts[moodObj.key] || 0) + 1;
+                stats.partner.total++;
+                const dot = createMoodDot(moodObj, dayData.partnerNote, true); 
+                dotsContainer.appendChild(dot);
             }
         }
 
@@ -428,8 +437,9 @@ function updateDualMoodStats(stats) {
     Object.keys(stats.me.counts).forEach(key => {
         if (stats.me.counts[key] > myMaxCount) {
             myMaxCount = stats.me.counts[key];
-            const m = getAllMoodOptions().find(o => o.key === key);
-            if (m) myDominant = m;
+            let m = getAllMoodOptions().find(o => o.key === key);
+            if (!m) m = { key, label: key, kaomoji: '😊', color: 'var(--accent-color)' };
+            myDominant = m;
         }
     });
 
@@ -438,8 +448,9 @@ function updateDualMoodStats(stats) {
     Object.keys(stats.partner.counts).forEach(key => {
         if (stats.partner.counts[key] > partnerMaxCount) {
             partnerMaxCount = stats.partner.counts[key];
-            const m = getAllMoodOptions().find(o => o.key === key);
-            if (m) partnerDominant = m;
+            let m = getAllMoodOptions().find(o => o.key === key);
+            if (!m) m = { key, label: key, kaomoji: '😊', color: 'var(--accent-color)' };
+            partnerDominant = m;
         }
     });
     
@@ -451,14 +462,14 @@ function updateDualMoodStats(stats) {
         const segments = Object.keys(moodCounts)
             .map(key => {
                 const count = moodCounts[key];
-                const moodObj = getAllMoodOptions().find(m => m.key === key);
-                if (moodObj) {
-                    const percentage = (count / totalCount) * 100;
-                    return `<div class="mood-bar-segment" style="width: ${percentage}%; background-color: ${moodObj.color};" title="${moodObj.label}: ${count}天"></div>`;
+                let moodObj = getAllMoodOptions().find(m => m.key === key);
+                if (!moodObj) {
+                    moodObj = { key, label: key, kaomoji: '😊', color: 'var(--accent-color)' };
                 }
-                return ''; 
+                const percentage = (count / totalCount) * 100;
+                return `<div class="mood-bar-segment" style="width: ${percentage}%; background-color: ${moodObj.color};" title="${moodObj.label}: ${count}天"></div>`;
             })
-            .join(''); 
+            .join('');
         return `<div class="mood-bar-container">${segments}</div>`;
     };
 
@@ -987,7 +998,7 @@ document.getElementById('confirm-mood-save').addEventListener('click', () => {
         moodData[selectedDateStr].partnerNote = document.getElementById('mood-note-input').value.trim();
         moodData[selectedDateStr].partnerWeather = weatherVal.trim();
     }
-    
+
     saveMoodData();
     closeMoodOverlay();
     showNotification('记录已保存 ✦', 'success');
@@ -1008,13 +1019,23 @@ function showDayDetails(dateStr, data) {
     document.getElementById('detail-date').textContent = `${m}月${d}日`;
 
     const mySection = document.getElementById('detail-my-section');
-    if (moodObj) {
+    const myNoRecord = document.getElementById('detail-my-no-record');
+    const deleteMyBtn = document.getElementById('delete-my-mood');
+    // 优先按 key 查 moodObj；如果查不到但 data.user 有值，构造一个兜底对象（防止找不到对应表情时整块隐藏）
+    let renderMood = moodObj;
+    if (!renderMood && data.user) {
+        console.warn('[Mood] 找不到 key 对应的心情对象，使用兜底：', data.user);
+        renderMood = { key: data.user, label: data.user, kaomoji: '😊', color: 'var(--accent-color)' };
+    }
+    if (renderMood) {
         mySection.style.display = 'block';
-        document.getElementById('detail-kaomoji').textContent = moodObj.kaomoji;
-        document.getElementById('detail-label').textContent = moodObj.label;
-        document.getElementById('detail-label').style.color = moodObj.color;
+        if (myNoRecord) myNoRecord.style.display = 'none';
+        if (deleteMyBtn) deleteMyBtn.style.display = '';
+        document.getElementById('detail-kaomoji').textContent = renderMood.kaomoji;
+        document.getElementById('detail-label').textContent = renderMood.label;
+        document.getElementById('detail-label').style.color = renderMood.color;
         document.getElementById('detail-text').textContent = data.note || "（这天没有写下随记...）";
-        detailView.style.borderLeftColor = moodObj.color;
+        detailView.style.borderLeftColor = renderMood.color;
         const myWeatherEl = document.getElementById('detail-my-weather');
         if (myWeatherEl) {
             if (data.myWeather) { myWeatherEl.style.display = 'block'; document.getElementById('detail-my-weather-val').textContent = data.myWeather; }
@@ -1022,27 +1043,28 @@ function showDayDetails(dateStr, data) {
         }
     } else {
         mySection.style.display = 'none';
+        if (myNoRecord) myNoRecord.style.display = 'block';
+        if (deleteMyBtn) deleteMyBtn.style.display = 'none';
     }
 
     const partnerSection = document.getElementById('detail-partner-section');
     const partnerNoRecord = document.getElementById('detail-partner-no-record');
     if (data.partner) {
-        const partnerMoodObj = allMoods.find(mo => mo.key === data.partner);
-        if (partnerMoodObj) {
-            partnerSection.style.display = 'block';
-            if (partnerNoRecord) partnerNoRecord.style.display = 'none';
-            document.getElementById('detail-partner-kaomoji').textContent = partnerMoodObj.kaomoji;
-            document.getElementById('detail-partner-label').textContent = partnerMoodObj.label;
-            document.getElementById('detail-partner-label').style.color = partnerMoodObj.color;
-            document.getElementById('detail-partner-text').textContent = data.partnerNote || "（Ta 这天没有写下任何随记）";
-            const partnerWeatherEl = document.getElementById('detail-partner-weather');
-            if (partnerWeatherEl) {
-                if (data.partnerWeather) { partnerWeatherEl.style.display = 'block'; document.getElementById('detail-partner-weather-val').textContent = data.partnerWeather; }
-                else partnerWeatherEl.style.display = 'none';
-            }
-        } else {
-            partnerSection.style.display = 'none';
-            if (partnerNoRecord) partnerNoRecord.style.display = 'none';
+        let partnerMoodObj = allMoods.find(mo => mo.key === data.partner);
+        if (!partnerMoodObj) {
+            console.warn('[Mood] 对方心情 key 找不到，使用兜底：', data.partner);
+            partnerMoodObj = { key: data.partner, label: data.partner, kaomoji: '😊', color: 'var(--accent-color)' };
+        }
+        partnerSection.style.display = 'block';
+        if (partnerNoRecord) partnerNoRecord.style.display = 'none';
+        document.getElementById('detail-partner-kaomoji').textContent = partnerMoodObj.kaomoji;
+        document.getElementById('detail-partner-label').textContent = partnerMoodObj.label;
+        document.getElementById('detail-partner-label').style.color = partnerMoodObj.color;
+        document.getElementById('detail-partner-text').textContent = data.partnerNote || "（Ta 这天没有写下任何随记）";
+        const partnerWeatherEl = document.getElementById('detail-partner-weather');
+        if (partnerWeatherEl) {
+            if (data.partnerWeather) { partnerWeatherEl.style.display = 'block'; document.getElementById('detail-partner-weather-val').textContent = data.partnerWeather; }
+            else partnerWeatherEl.style.display = 'none';
         }
     } else {
         partnerSection.style.display = 'none';
