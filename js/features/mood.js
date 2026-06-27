@@ -273,17 +273,11 @@ function checkPartnerDailyMood() {
     }
 }
 function saveMoodData() {
-    localforage.setItem(getStorageKey('moodCalendar'), moodData).catch(err => {
-        console.error('[Mood] 写入失败：', err);
-    });
+    localforage.setItem(getStorageKey('moodCalendar'), moodData);
     window.moodData = moodData;
-    // 心情模态框存在就重新渲染日历（不再检查可见性，因为状态判断在某些情况下不准）
-    // 用 requestAnimationFrame 让浮层关闭动画先完成，再触发重渲，避免被中间状态打断
     var moodModal = document.getElementById('mood-modal');
-    if (moodModal) {
-        requestAnimationFrame(() => {
-            try { renderMoodCalendar(); } catch(e) { console.warn('[Mood] 渲染失败:', e); }
-        });
+    if (moodModal && !moodModal.classList.contains('hidden') && moodModal.style.display !== 'none') {
+        renderMoodCalendar();
     }
 }
 function saveCustomMoodOptions() {
@@ -993,7 +987,7 @@ document.getElementById('confirm-mood-save').addEventListener('click', () => {
         moodData[selectedDateStr].partnerNote = document.getElementById('mood-note-input').value.trim();
         moodData[selectedDateStr].partnerWeather = weatherVal.trim();
     }
-
+    
     saveMoodData();
     closeMoodOverlay();
     showNotification('记录已保存 ✦', 'success');
@@ -1014,12 +1008,8 @@ function showDayDetails(dateStr, data) {
     document.getElementById('detail-date').textContent = `${m}月${d}日`;
 
     const mySection = document.getElementById('detail-my-section');
-    const myNoRecord = document.getElementById('detail-my-no-record');
-    const deleteMyBtn = document.getElementById('delete-my-mood');
     if (moodObj) {
         mySection.style.display = 'block';
-        if (myNoRecord) myNoRecord.style.display = 'none';
-        if (deleteMyBtn) deleteMyBtn.style.display = '';
         document.getElementById('detail-kaomoji').textContent = moodObj.kaomoji;
         document.getElementById('detail-label').textContent = moodObj.label;
         document.getElementById('detail-label').style.color = moodObj.color;
@@ -1032,8 +1022,6 @@ function showDayDetails(dateStr, data) {
         }
     } else {
         mySection.style.display = 'none';
-        if (myNoRecord) myNoRecord.style.display = 'block';
-        if (deleteMyBtn) deleteMyBtn.style.display = 'none';
     }
 
     const partnerSection = document.getElementById('detail-partner-section');
