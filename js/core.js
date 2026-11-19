@@ -1724,20 +1724,17 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 ? messages.filter(m => m.sender === 'user' && m.text).slice(-10)
                 : [];
             for (let i = 0; i < replyCount; i++) {
-                // ── 每条独立 50/50：走造词库 or 随机生成新词 ──
-                const _wbRaw = window.wordBank || [];
-                const _wb = _wbRaw.map(it => typeof it === 'string' ? it : (it && it.text) || '').filter(Boolean);
+                // ── 只走主字卡（不再从造词库取词）：50% 直接取一条；50% 拼接 1~4 条后发出 ──
                 let activePool;
-                if (Math.random() < 0.5 && _wb.length > 0) {
-                    // 50%：直接从造词库随机抽（造词库为空时降级到生成）
-                    activePool = _wb.filter(s => s && String(s).trim());
+                if (Math.random() < 0.5) {
+                    // 直接取一条主字卡
+                    activePool = replyPoolOnce;
                 } else {
-                    // 50%：从字卡库+造词库合集抽1-4条拼接，存入造词库，发这句
-                    const mergedPool = [...replyPoolOnce, ..._wb].filter(s => s && String(s).trim());
+                    // 从主字卡抽1-4条拼接，拼接结果存入造词库，并作为本条消息发出
                     const cnt = Math.floor(Math.random() * 4) + 1;
                     const parts = [];
                     for (let k = 0; k < cnt; k++) {
-                        parts.push(String(mergedPool[Math.floor(Math.random() * mergedPool.length)]).trim());
+                        parts.push(String(replyPoolOnce[Math.floor(Math.random() * replyPoolOnce.length)]).trim());
                     }
                     const generated = parts.join('');
                     if (typeof _pushToWordBank === 'function') _pushToWordBank(generated, 'chat');
@@ -1876,6 +1873,77 @@ if (partnerPersonas && partnerPersonas.length > 0 && Math.random() < 0.3) {
                 }, delay);
             }
         }
+
+// ── 把造词库自动生成的内容以"对方"身份发到聊天里（原来只存不发） ──
+// 由 features/reply-library.js 的造词库定时器调用
+window._sendPartnerAutoMessage = function(text, opts) {
+    const content = String(text == null ? '' : text).trim();
+    if (!content) return false;
+
+    const senderName = (typeof settings !== 'undefined' && settings.partnerName) ? settings.partnerName : '对方';
+    const showTyping = (typeof settings !== 'undefined' && !!settings.typingIndicatorEnabled);
+
+    const tiWrapper = document.getElementById('typing-indicator-wrapper');
+    if (showTyping && tiWrapper) {
+        const tiLabel = document.getElementById('typing-indicator-label');
+        const tiAvatar = document.getElementById('typing-indicator-avatar');
+        if (tiLabel) tiLabel.textContent = senderName + ' 正在输入';
+        if (tiAvatar && DOMElements && DOMElements.partner && DOMElements.partner.avatar) {
+            const partnerImg = DOMElements.partner.avatar.querySelector('img');
+            tiAvatar.innerHTML = partnerImg ? `<img src="${partnerImg.src}">` : '<i class="fas fa-user"></i>';
+        }
+        const inputArea = document.querySelector('.input-area-wrapper');
+        if (inputArea) tiWrapper.style.bottom = inputArea.offsetHeight + 'px';
+        tiWrapper.style.display = 'block';
+        if (DOMElements && DOMElements.chatContainer) {
+            DOMElements.chatContainer.scrollTop = DOMElements.chatContainer.scrollHeight;
+        }
+    }
+
+    const hideTyping = function() {
+        if (!showTyping) return;
+        const w = document.getElementById('typing-indicator-wrapper');
+        if (!w) return;
+        const inner = w.querySelector('.typing-indicator');
+        if (inner) {
+            inner.classList.add('hiding');
+            setTimeout(function() {
+                w.style.display = 'none';
+                inner.classList.remove('hiding');
+            }, 240);
+        } else {
+            w.style.display = 'none';
+        }
+    };
+
+    const wait = (opts && typeof opts.delay === 'number') ? opts.delay : (1200 + Math.random() * 1800);
+    setTimeout(function() {
+        try {
+            if (typeof addMessage === 'function') {
+                addMessage({
+                    id: Date.now(),
+                    sender: senderName,
+                    text: content,
+                    timestamp: new Date(),
+                    status: 'received',
+                    favorited: false,
+                    note: null,
+                    type: 'normal'
+                });
+            }
+            if (typeof window._sendPartnerNotification === 'function') {
+                window._sendPartnerNotification(senderName, content);
+            }
+            if (typeof playSound === 'function') playSound('message');
+        } catch (e) {
+            console.error('[WordBank] 自动生成内容发送失败:', e);
+        } finally {
+            hideTyping();
+        }
+    }, wait);
+
+    return true;
+};
 
 function showModal(modalElement, focusElement = null) {
             if (modalElement._hideTimeout) {

@@ -105,8 +105,13 @@ function _scheduleWordBankAuto() {
             }
             const generated = parts.join('');
             window.wordBank = window.wordBank || [];
-            _pushToWordBank(generated, 'auto');
+            const added = _pushToWordBank(generated, 'auto');
             await saveWordBank();
+            // 生成后直接以对方身份发出来（重复内容不重复发送）
+            if (added && typeof window._sendPartnerAutoMessage === 'function') {
+                const punctuation = Math.random() < 0.2 ? '！' : (Math.random() < 0.2 ? '...' : '。');
+                window._sendPartnerAutoMessage(generated + punctuation);
+            }
         }
         _scheduleWordBankAuto(); // 安排下一次
     }, hours * 60 * 60 * 1000);

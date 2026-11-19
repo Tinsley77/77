@@ -3,7 +3,7 @@
 // 每次升级要改 CACHE_VERSION，旧缓存会自动清除
 // ============================================================
 
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.0.1';
 const CACHE_NAME = `jiazi-${CACHE_VERSION}`;
 
 // 预缓存的核心文件
